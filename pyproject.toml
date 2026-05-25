@@ -1,0 +1,75 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "codemesh"
+version = "0.1.0"
+description = "Graph-enhanced retrieval-augmented generation for code"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.12"
+authors = [{name = "gkatte"}]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "tree-sitter>=0.23,<0.25",
+    "tree-sitter-python>=0.23",
+    "tree-sitter-typescript>=0.23",
+    "tree-sitter-rust>=0.23",
+    "sqlite-vec>=0.1",
+    "sentence-transformers>=3.2",
+    "optimum[onnxruntime]>=1.22",
+    "mcp>=1.1",
+    "typer>=0.12",
+    "watchdog>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-cov>=6.0",
+    "ruff>=0.8",
+    "mypy>=1.13",
+]
+
+[project.scripts]
+codemesh = "codemesh.cli.main:app"
+
+[project.urls]
+Homepage = "https://github.com/gkatte/codemesh"
+Repository = "https://github.com/gkatte/codemesh"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "SIM"]
+ignore = ["E501", "TC002", "TC003"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks integration tests",
+]
+
+[tool.coverage.run]
+source = ["codemesh"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 80

@@ -1,0 +1,232 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py.cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+# .python-version
+
+# pipenv
+# Pipfile.lock
+
+# UV
+# uv.lock
+
+# poetry
+# poetry.lock
+# poetry.toml
+
+# pdm
+# pdm.lock
+# pdm.toml
+.pdm-python
+.pdm-build/
+
+# pixi
+# pixi.lock
+.pixi
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# Environments
+.env
+.envrc
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# PyCharm / JetBrains
+.idea/
+
+# Visual Studio Code
+.vscode/
+*.swp
+*.swo
+
+# Ruff
+.ruff_cache/
+
+# PyPI configuration file
+.pypirc
+
+# Marimo
+marimo/_static/
+marimo/_lsp/
+__marimo__/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# =============================================================================
+# AI Agent / LLM Internal Working Files
+# These files are for developer tooling (Claude Code, Hermes Agent, etc.)
+# and are NOT part of the CodeMesh project functionality.
+# =============================================================================
+
+# Claude Code
+.claude/
+CLAUDE.md
+AGENTS.md
+
+# Hermes Agent
+.hermes/
+hermes.yaml
+hermes.yml
+.hermesagent/
+.hacfg
+
+# OpenCode
+.opencode/
+
+# Cursor
+.cursor/
+.cursorrules
+
+# Continue.dev
+.continue/
+
+# GitHub Copilot
+.copilot/
+
+# =============================================================================
+# =============================================================================
+
+# OS
+.DS_Store
+Thumbs.db
+Thumbs.db:encryptable
+*.stackdump
+[Cc]rash[Rr]eports/
+retirejs.json
+
+# Project specific
+*.db
+*.sqlite
+*.sqlite3
+.codemesh/
+codemesh.egg-info/
+
+# Model cache (downloaded embedding/reranker models)
+.models/
+*.onnx
+*.bin
+*.safetensors
+
+# Temporary files
+*.tmp
+*.bak
+*~
+\\#*\\#
+
+# Benchmark comparison files (internal use, not for publication)
+codemesh/benchmark/
+tests/test_benchmark_codegraph.py
