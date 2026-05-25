@@ -1,4 +1,4 @@
-"""Token-budget-aware context builder."""
+"""Token-budget-aware context builder with deduplication."""
 
 from __future__ import annotations
 
@@ -39,8 +39,29 @@ def estimate_tokens(text: str) -> int:
     return max(1, len(text) // 4)
 
 
+def _line_overlap(a_start: int, a_end: int, b_start: int, b_end: int) -> float:
+    """Compute fractional overlap between two line ranges.
+
+    Returns the fraction of the smaller range that overlaps with the larger.
+    0.0 = no overlap, 1.0 = complete overlap.
+    """
+    overlap_start = max(a_start, b_start)
+    overlap_end = min(a_end, b_end)
+    if overlap_start >= overlap_end:
+        return 0.0
+    overlap_len = overlap_end - overlap_start
+    min_len = min(a_end - a_start, b_end - b_start)
+    return overlap_len / min_len if min_len > 0 else 0.0
+
+
 class ContextBuilder:
-    """Builds token-budget-aware context for LLM agents."""
+    """Builds token-budget-aware context for LLM agents.
+
+    Deduplicates overlapping snippets: when two snippets cover substantially
+    the same lines in the same file, only the higher-scored one is kept.
+    """
+
+    OVERLAP_THRESHOLD = 0.6  # If >60% of lines overlap, treat as duplicate
 
     def __init__(self, conn: sqlite3.Connection, root: Path) -> None:
         self.conn = conn
@@ -56,10 +77,11 @@ class ContextBuilder:
             options = ContextOptions()
 
         snippets = self._extract_snippets(nodes, options)
+        deduped = self._deduplicate(snippets)
         total_tokens = 0
         selected: list[Snippet] = []
 
-        for snippet in snippets:
+        for snippet in deduped:
             tokens = estimate_tokens(snippet.code)
             if total_tokens + tokens > options.max_tokens or len(selected) >= options.max_snippets:
                 break
@@ -104,13 +126,43 @@ class ContextBuilder:
                 continue
         return snippets
 
+    def _deduplicate(self, snippets: list[Snippet]) -> list[Snippet]:
+        """Remove overlapping snippets, keeping the higher-scored one.
+
+        Snippets are processed in order of relevance_score (already sorted
+        by the caller). For each pair of snippets from the same file, if
+        the line overlap exceeds the threshold, the lower-scored snippet
+        is dropped.
+        """
+        kept: list[Snippet] = []
+        for snippet in snippets:
+            is_dup = False
+            for existing in kept:
+                if existing.file_path != snippet.file_path:
+                    continue
+                overlap = _line_overlap(
+                    existing.start_line,
+                    existing.end_line,
+                    snippet.start_line,
+                    snippet.end_line,
+                )
+                if overlap >= self.OVERLAP_THRESHOLD:
+                    is_dup = True
+                    break
+            if not is_dup:
+                kept.append(snippet)
+        return kept
+
     def _format_xml(self, snippets: list[Snippet], query: str) -> str:
         lines = [f'<code_context query="{xml_escape(query)}">']
         for s in snippets:
+            rel = xml_escape(f"{s.relevance_score:.2f}")
             lines.append(
                 f'  <snippet file="{xml_escape(str(s.file_path))}" '
-                f'lines="{s.start_line}-{s.end_line}" relevance="{s.relevance_score:.2f}">'
+                f'lines="{s.start_line}-{s.end_line}" relevance="{rel}">'
             )
+            if s.node_name:
+                lines.append(f"    <!-- {xml_escape(s.node_name)} -->")
             lines.append(f"    {xml_escape(s.code)}")
             lines.append("  </snippet>")
         lines.append("</code_context>")
@@ -119,7 +171,10 @@ class ContextBuilder:
     def _format_markdown(self, snippets: list[Snippet], query: str) -> str:
         lines = [f"## Code Context: {query}", ""]
         for s in snippets:
-            lines.append(f"### {s.file_path}:{s.start_line}-{s.end_line}")
+            header = f"### {s.file_path}:{s.start_line}-{s.end_line}"
+            if s.node_name:
+                header += f" ({s.node_name})"
+            lines.append(header)
             lines.append("```")
             lines.append(s.code)
             lines.append("```")

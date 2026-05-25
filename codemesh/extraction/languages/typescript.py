@@ -62,6 +62,12 @@ class TypeScriptExtractor:
             self._extract_method(source, node, file_path, parent_id, nodes, edges)
         elif kind == "interface_declaration":
             self._extract_interface(source, node, file_path, parent_id, nodes, edges)
+        elif kind == "type_alias_declaration":
+            self._extract_type_alias(source, node, file_path, parent_id, nodes, edges)
+        elif kind == "enum_declaration":
+            self._extract_enum(source, node, file_path, parent_id, nodes, edges)
+        elif kind == "variable_declaration":
+            self._extract_variable(source, node, file_path, parent_id, nodes, edges)
         else:
             for child in node.children:
                 self._walk(source, child, file_path, parent_id, nodes, edges)
@@ -297,6 +303,128 @@ class TypeScriptExtractor:
                 confidence=0.5,
             )
         )
+
+    def _extract_type_alias(
+        self,
+        source: bytes,
+        node: Any,
+        file_path: Path,
+        parent_id: str,
+        nodes: list[Node],
+        edges: list[Edge],
+    ) -> None:
+        name_node = node.child_by_field_name("name")
+        if name_node is None:
+            return
+        name = source[name_node.start_byte : name_node.end_byte].decode()
+        start_line = node.start_point[0] + 1
+        end_line = node.end_point[0] + 1
+        node_id = self._node_id(file_path, start_line, end_line)
+        qualified = self._build_qualified_name(file_path, name, parent_id, nodes)
+        type_node = Node(
+            id=node_id,
+            kind=NodeKind.TYPE_ALIAS,
+            name=name,
+            qualified_name=qualified,
+            file_path=file_path,
+            language=Language.TYPESCRIPT,
+            start_line=start_line,
+            end_line=end_line,
+            parent_id=parent_id,
+        )
+        nodes.append(type_node)
+        edges.append(
+            Edge(
+                id=self._edge_id(parent_id, node_id, EdgeKind.CONTAINS),
+                source_id=parent_id,
+                target_id=node_id,
+                kind=EdgeKind.CONTAINS,
+            )
+        )
+
+    def _extract_enum(
+        self,
+        source: bytes,
+        node: Any,
+        file_path: Path,
+        parent_id: str,
+        nodes: list[Node],
+        edges: list[Edge],
+    ) -> None:
+        name_node = node.child_by_field_name("name")
+        if name_node is None:
+            return
+        name = source[name_node.start_byte : name_node.end_byte].decode()
+        start_line = node.start_point[0] + 1
+        end_line = node.end_point[0] + 1
+        node_id = self._node_id(file_path, start_line, end_line)
+        qualified = self._build_qualified_name(file_path, name, parent_id, nodes)
+        enum_node = Node(
+            id=node_id,
+            kind=NodeKind.ENUM,
+            name=name,
+            qualified_name=qualified,
+            file_path=file_path,
+            language=Language.TYPESCRIPT,
+            start_line=start_line,
+            end_line=end_line,
+            parent_id=parent_id,
+        )
+        nodes.append(enum_node)
+        edges.append(
+            Edge(
+                id=self._edge_id(parent_id, node_id, EdgeKind.CONTAINS),
+                source_id=parent_id,
+                target_id=node_id,
+                kind=EdgeKind.CONTAINS,
+            )
+        )
+
+    def _extract_variable(
+        self,
+        source: bytes,
+        node: Any,
+        file_path: Path,
+        parent_id: str,
+        nodes: list[Node],
+        edges: list[Edge],
+    ) -> None:
+        """Extract variable declarations (let/const/var)."""
+        for child in node.children:
+            if child.type == "variable_declarator":
+                name_node = child.child_by_field_name("name")
+                if name_node is None:
+                    continue
+                name = source[name_node.start_byte : name_node.end_byte].decode()
+                if name.startswith("_") and len(name) <= 2:
+                    continue  # Skip placeholder names
+                start_line = child.start_point[0] + 1
+                end_line = child.end_point[0] + 1
+                node_id = self._node_id(file_path, start_line, end_line)
+                # Determine if constant (const) or variable
+                parent_kind = node.type
+                kind = NodeKind.CONSTANT if "const" in parent_kind else NodeKind.VARIABLE
+                qualified = self._build_qualified_name(file_path, name, parent_id, nodes)
+                var_node = Node(
+                    id=node_id,
+                    kind=kind,
+                    name=name,
+                    qualified_name=qualified,
+                    file_path=file_path,
+                    language=Language.TYPESCRIPT,
+                    start_line=start_line,
+                    end_line=end_line,
+                    parent_id=parent_id,
+                )
+                nodes.append(var_node)
+                edges.append(
+                    Edge(
+                        id=self._edge_id(parent_id, node_id, EdgeKind.CONTAINS),
+                        source_id=parent_id,
+                        target_id=node_id,
+                        kind=EdgeKind.CONTAINS,
+                    )
+                )
 
     def _extract_calls(
         self,

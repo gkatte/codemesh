@@ -18,6 +18,7 @@ app = typer.Typer(
 def index(
     path: str = typer.Argument(".", help="Path to the codebase to index"),
     workers: int | None = typer.Option(None, "--workers", "-w", help="Number of parallel workers"),
+    embed: bool = typer.Option(True, "--embed/--no-embed", help="Compute neural embeddings"),
 ) -> None:
     """Index a codebase."""
     from codemesh.indexer import index_project
@@ -28,8 +29,11 @@ def index(
         raise typer.Exit(1)
 
     typer.echo(f"Indexing {root}...")
-    stats = index_project(root, max_workers=workers)
-    typer.echo(f"Done! {stats['nodes']} nodes, {stats['edges']} edges indexed.")
+    stats = index_project(root, max_workers=workers, embed=embed)
+    parts = [f"{stats['nodes']} nodes", f"{stats['edges']} edges"]
+    if stats.get("embeddings", 0) > 0:
+        parts.append(f"{stats['embeddings']} embeddings")
+    typer.echo(f"Done! {', '.join(parts)} indexed in {stats.get('time_seconds', 0):.1f}s.")
 
 
 @app.command()
