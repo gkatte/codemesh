@@ -9,8 +9,7 @@ from pathlib import Path
 from codemesh.db.connection import get_connection, get_db_path
 from codemesh.db.queries import count_edges, count_nodes, insert_edge, insert_node
 from codemesh.db.schema import init_db
-from codemesh.embedding.model import EmbeddingModel
-from codemesh.embedding.store import VectorStore
+from codemesh.embedding.model import BatchEmbedder, EmbeddingModel
 from codemesh.extraction.orchestrator import ExtractionOrchestrator
 from codemesh.resolution.resolver import ReferenceResolver
 
@@ -69,28 +68,8 @@ def index_project(
         if embed:
             t5 = time.time()
             model = EmbeddingModel(model_name=embedding_model) if embedding_model else EmbeddingModel()
-            store = VectorStore(conn, model.dimensions)
-
-            # Batch embed all nodes
-            texts = [_embed_text(n) for n in nodes]
-            valid = [(n, t) for n, t in zip(nodes, texts) if t.strip()]
-            if valid:
-                valid_nodes, valid_texts = zip(*valid)
-                embeddings = model.encode(list(valid_texts))
-                items = list(zip([n.id for n in valid_nodes], embeddings))
-                store.upsert_batch(items)
-                embedding_count = len(items)
-
-                # Record meta
-                conn.execute(
-                    """
-                    INSERT OR REPLACE INTO embedding_index_meta
-                    (model_name, model_version, dimensions, indexed_at, total_vectors)
-                    VALUES (?, ?, ?, unixepoch(), ?)
-                    """,
-                    (model.model_name, "1.0", model.dimensions, embedding_count),
-                )
-
+            embedder = BatchEmbedder(model=model, batch_size=64)
+            embedding_count = embedder.embed_nodes(conn, nodes, root, force=True)
             t6 = time.time()
             logger.info("Embeddings: %d vectors in %.2fs", embedding_count, t6 - t5)
 
@@ -105,17 +84,6 @@ def index_project(
         "embeddings": embedding_count,
         "time_seconds": round(total_time, 2),
     }
-
-
-def _embed_text(node) -> str:
-    """Build the text representation of a node for embedding."""
-    parts = []
-    if node.docstring:
-        parts.append(node.docstring)
-    if node.signature:
-        parts.append(node.signature)
-    parts.append(f"{node.kind.value} {node.qualified_name}")
-    return " ".join(parts)
 
 
 def sync_project(root: Path) -> None:

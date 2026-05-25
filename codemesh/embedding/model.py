@@ -12,8 +12,8 @@ from codemesh.types import Node
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "nomic-ai/nomic-embed-code"
-DEFAULT_DIMENSIONS = 768
+DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+DEFAULT_DIMENSIONS = 384
 
 
 class EmbeddingModel:
@@ -111,16 +111,45 @@ class BatchEmbedder:
 
 
 class VectorStore:
-    """Stores and queries embeddings using SQLite-vec."""
+    """Stores and queries embeddings using sqlite-vec with brute-force fallback.
 
-    def __init__(self, conn: sqlite3.Connection, dimensions: int = 768) -> None:
+    Tries to use the sqlite-vec virtual table for ANN search. If the extension
+    is not available, falls back to brute-force cosine similarity over the
+    nodes.embedding BLOB column.
+    """
+
+    def __init__(self, conn: sqlite3.Connection, dimensions: int = 384) -> None:
         self.conn = conn
         self.dimensions = dimensions
+        self._use_vec0 = self._check_vec0()
+
+    def _check_vec0(self) -> bool:
+        """Check if sqlite-vec virtual table is available."""
+        try:
+            self.conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE name='nodes_embedding'"
+            ).fetchone()
+            # Table exists, vec0 is available
+            return True
+        except Exception:
+            pass
+        # Try creating the table to see if vec0 is available
+        try:
+            self.conn.execute(
+                f"CREATE VIRTUAL TABLE IF NOT EXISTS nodes_embedding USING vec0("
+                f"id TEXT PRIMARY KEY, embedding FLOAT[{self.dimensions}], metadata TEXT)"
+            )
+            return True
+        except Exception:
+            return False
 
     def create_table(self) -> None:
-        self.conn.execute(
-            f"CREATE VIRTUAL TABLE IF NOT EXISTS nodes_embedding USING vec0(id TEXT PRIMARY KEY, embedding FLOAT[{self.dimensions}], metadata TEXT)"
-        )
+        """Create the vector table if using sqlite-vec."""
+        if self._use_vec0:
+            self.conn.execute(
+                f"CREATE VIRTUAL TABLE IF NOT EXISTS nodes_embedding USING vec0("
+                f"id TEXT PRIMARY KEY, embedding FLOAT[{self.dimensions}], metadata TEXT)"
+            )
 
     def upsert_embeddings(
         self, nodes: list[Node], embeddings: list[list[float]], model_name: str
@@ -137,22 +166,68 @@ class VectorStore:
                     "language": node.language.value,
                 }
             )
-            self.conn.execute(
-                "INSERT OR REPLACE INTO nodes_embedding (id, embedding, metadata) VALUES (?, ?, ?)",
-                (node.id, blob, metadata),
-            )
+            # Always store in nodes table (for brute-force fallback)
             self.conn.execute(
                 "UPDATE nodes SET embedding=?, embedding_model=?, last_embedded_at=unixepoch() WHERE id=?",
                 (blob, model_name, node.id),
             )
+            # Also store in vec0 virtual table if available
+            if self._use_vec0:
+                try:
+                    self.conn.execute(
+                        "INSERT OR REPLACE INTO nodes_embedding (id, embedding, metadata) VALUES (?, ?, ?)",
+                        (node.id, blob, metadata),
+                    )
+                except Exception:
+                    pass
 
     def search(self, query_embedding: list[float], top_k: int = 20) -> list[tuple[str, float]]:
-        blob = struct.pack(f"{len(query_embedding)}f", *query_embedding)
+        if self._use_vec0:
+            return self._search_vec0(query_embedding, top_k)
+        return self._search_brute_force(query_embedding, top_k)
+
+    def _search_vec0(self, query_embedding: list[float], top_k: int) -> list[tuple[str, float]]:
+        """ANN search via sqlite-vec."""
+        import struct as _struct
+
+        blob = _struct.pack(f"{len(query_embedding)}f", *query_embedding)
+        try:
+            rows = self.conn.execute(
+                "SELECT id, distance FROM nodes_embedding WHERE embedding MATCH ? AND k = ?",
+                (blob, top_k),
+            ).fetchall()
+            return [(row[0], row[1]) for row in rows]
+        except Exception:
+            return self._search_brute_force(query_embedding, top_k)
+
+    def _search_brute_force(
+        self, query_embedding: list[float], top_k: int
+    ) -> list[tuple[str, float]]:
+        """Brute-force cosine similarity over nodes.embedding BLOB column."""
+        import math
+
         rows = self.conn.execute(
-            "SELECT id, distance FROM nodes_embedding WHERE embedding MATCH ? AND k = ?",
-            (blob, top_k),
+            "SELECT id, embedding FROM nodes WHERE embedding IS NOT NULL"
         ).fetchall()
-        return [(row[0], row[1]) for row in rows]
+
+        query_norm = math.sqrt(sum(x * x for x in query_embedding))
+        if query_norm == 0:
+            return []
+
+        scored = []
+        for node_id, blob in rows:
+            if blob is None:
+                continue
+            vec = list(struct.unpack(f"{len(query_embedding)}f", blob))
+            dot = sum(a * b for a, b in zip(query_embedding, vec))
+            vec_norm = math.sqrt(sum(x * x for x in vec))
+            if vec_norm == 0:
+                continue
+            similarity = dot / (query_norm * vec_norm)
+            scored.append((node_id, 1.0 - similarity))
+
+        scored.sort(key=lambda x: x[1])
+        return scored[:top_k]
 
     def is_embedded(self, node_id: str, model_name: str) -> bool:
         row = self.conn.execute(
@@ -162,7 +237,11 @@ class VectorStore:
         return row is not None and row[0] is not None
 
     def delete_all(self) -> None:
-        self.conn.execute("DELETE FROM nodes_embedding")
+        if self._use_vec0:
+            try:
+                self.conn.execute("DELETE FROM nodes_embedding")
+            except Exception:
+                pass
         self.conn.execute(
             "UPDATE nodes SET embedding=NULL, embedding_model='none', last_embedded_at=NULL"
         )

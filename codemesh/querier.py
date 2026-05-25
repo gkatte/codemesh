@@ -10,8 +10,7 @@ from codemesh.context.builder import ContextBuilder, ContextFormat, ContextOptio
 from codemesh.db.connection import get_connection, get_db_path
 from codemesh.db.queries import get_all_nodes, search_nodes_fts
 from codemesh.db.schema import init_db
-from codemesh.embedding.model import EmbeddingModel
-from codemesh.embedding.store import VectorStore
+from codemesh.embedding.model import EmbeddingModel, VectorStore
 from codemesh.graph.traverser import GraphTraverser
 from codemesh.retrieval import reciprocal_rank_fusion
 from codemesh.types import Node
@@ -148,18 +147,15 @@ def _semantic_search(
     model fails to load.
     """
     # Check if any embeddings exist before trying to load the model
-    try:
-        row = conn.execute("SELECT COUNT(*) FROM embedding_index_meta").fetchone()
-        if row is None or row[0] == 0:
-            return []
-    except sqlite3.OperationalError:
+    row = conn.execute(
+        "SELECT total_vectors FROM embedding_index_meta LIMIT 1"
+    ).fetchone()
+    if row is None or row[0] == 0:
         return []
 
     try:
         model = EmbeddingModel()
         store = VectorStore(conn, model.dimensions)
-        if store.count() == 0:
-            return []
         query_emb = model.encode_single(query)
         hits = store.search(query_emb, top_k=top_k)
     except Exception as e:

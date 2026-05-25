@@ -178,6 +178,11 @@ def reciprocal_rank_fusion(
         else:
             scores[node.id] = (node, rrf)
     fused = sorted(scores.values(), key=lambda x: x[1], reverse=True)
+    # Normalize scores to 0-1 range for display
+    if fused:
+        max_score = fused[0][1]
+        if max_score > 0:
+            fused = [(node, score / max_score) for node, score in fused]
     return fused
 
 
