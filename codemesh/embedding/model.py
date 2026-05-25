@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import sqlite3
 import struct
@@ -12,8 +13,9 @@ from codemesh.types import Node
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-DEFAULT_DIMENSIONS = 384
+DEFAULT_MODEL = "dunzhang/stella_en_1.5B_v5"
+DEFAULT_DIMENSIONS = 1024
+DEFAULT_RERANKER = "BAAI/bge-reranker-v2-m3"
 
 
 class EmbeddingModel:
@@ -59,7 +61,18 @@ class EmbeddingModel:
 
 
 EMBEDDABLE_KINDS = frozenset(
-    {"function", "method", "class", "interface", "struct", "trait", "enum"}
+    {
+        "function",
+        "method",
+        "class",
+        "interface",
+        "struct",
+        "trait",
+        "enum",
+        "constant",
+        "variable",
+        "type_alias",
+    }
 )
 
 
@@ -118,7 +131,7 @@ class VectorStore:
     nodes.embedding BLOB column.
     """
 
-    def __init__(self, conn: sqlite3.Connection, dimensions: int = 384) -> None:
+    def __init__(self, conn: sqlite3.Connection, dimensions: int = DEFAULT_DIMENSIONS) -> None:
         self.conn = conn
         self.dimensions = dimensions
         self._use_vec0 = self._check_vec0()
@@ -126,9 +139,7 @@ class VectorStore:
     def _check_vec0(self) -> bool:
         """Check if sqlite-vec virtual table is available."""
         try:
-            self.conn.execute(
-                "SELECT 1 FROM sqlite_master WHERE name='nodes_embedding'"
-            ).fetchone()
+            self.conn.execute("SELECT 1 FROM sqlite_master WHERE name='nodes_embedding'").fetchone()
             # Table exists, vec0 is available
             return True
         except Exception:
@@ -173,13 +184,11 @@ class VectorStore:
             )
             # Also store in vec0 virtual table if available
             if self._use_vec0:
-                try:
+                with contextlib.suppress(Exception):
                     self.conn.execute(
                         "INSERT OR REPLACE INTO nodes_embedding (id, embedding, metadata) VALUES (?, ?, ?)",
                         (node.id, blob, metadata),
                     )
-                except Exception:
-                    pass
 
     def search(self, query_embedding: list[float], top_k: int = 20) -> list[tuple[str, float]]:
         if self._use_vec0:
@@ -219,7 +228,7 @@ class VectorStore:
             if blob is None:
                 continue
             vec = list(struct.unpack(f"{len(query_embedding)}f", blob))
-            dot = sum(a * b for a, b in zip(query_embedding, vec))
+            dot = sum(a * b for a, b in zip(query_embedding, vec, strict=False))
             vec_norm = math.sqrt(sum(x * x for x in vec))
             if vec_norm == 0:
                 continue
@@ -238,10 +247,8 @@ class VectorStore:
 
     def delete_all(self) -> None:
         if self._use_vec0:
-            try:
+            with contextlib.suppress(Exception):
                 self.conn.execute("DELETE FROM nodes_embedding")
-            except Exception:
-                pass
         self.conn.execute(
             "UPDATE nodes SET embedding=NULL, embedding_model='none', last_embedded_at=NULL"
         )
@@ -251,3 +258,90 @@ class VectorStore:
             "INSERT OR REPLACE INTO embedding_index_meta (model_name, model_version, dimensions, indexed_at, total_vectors) VALUES (?, ?, ?, unixepoch(), ?)",
             (model_name, model_version, self.dimensions, total_vectors),
         )
+
+
+class CrossEncoderReranker:
+    """Cross-encoder re-ranker for filtering noise from embedding search results.
+
+    Uses a cross-encoder model (e.g., BAAI/bge-reranker-v2-m3) to score
+    query-document pairs independently. This is more accurate than cosine
+    similarity alone because it models the full interaction between query
+    and document tokens.
+
+    Falls back gracefully if the model is not installed or fails to load.
+    """
+
+    def __init__(self, model_name: str = DEFAULT_RERANKER, device: str | None = None) -> None:
+        self.model_name = model_name
+        self.device = device
+        self._model: object | None = None
+        self._tokenizer: object | None = None
+
+    def _load_model(self) -> None:
+        if self._model is not None:
+            return
+        logger.info("Loading cross-encoder re-ranker: %s", self.model_name)
+        try:
+            from transformers import AutoModelForSequenceClassification, AutoTokenizer
+
+            self._tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+            self._model = AutoModelForSequenceClassification.from_pretrained(self.model_name)
+            if self.device:
+                self._model = self._model.to(self.device)
+            self._model.eval()
+            logger.info("Re-ranker loaded: %s", self.model_name)
+        except Exception as e:
+            logger.warning("Failed to load re-ranker %s: %s", self.model_name, e)
+            self._model = None
+
+    def rerank(
+        self,
+        query: str,
+        documents: list[tuple[str, str]],
+        top_k: int | None = None,
+        threshold: float = 0.3,
+    ) -> list[tuple[str, float]]:
+        """Re-rank documents by query-document relevance.
+
+        Args:
+            query: The search query string.
+            documents: List of (id, text) tuples to re-rank.
+            top_k: Maximum number of results to return (None = all above threshold).
+            threshold: Minimum relevance score to include a document.
+
+        Returns:
+            List of (id, score) tuples sorted by score descending.
+        """
+        self._load_model()
+        if self._model is None or self._tokenizer is None or not documents:
+            return [(doc_id, 0.5) for doc_id, _ in documents]
+
+        try:
+            import torch
+
+            pairs = [(query, doc_text) for _, doc_text in documents]
+            inputs = self._tokenizer(
+                [p[0] for p in pairs],
+                [p[1] for p in pairs],
+                padding=True,
+                truncation=True,
+                max_length=512,
+                return_tensors="pt",
+            )
+            if self.device:
+                inputs = {k: v.to(self.device) for k, v in inputs.items()}
+            with torch.no_grad():
+                logits = self._model(**inputs).logits.squeeze(-1)
+                scores = torch.sigmoid(logits).cpu().tolist()
+            results = [
+                (doc_id, float(score))
+                for (doc_id, _), score in zip(documents, scores, strict=False)
+                if score >= threshold
+            ]
+            results.sort(key=lambda x: x[1], reverse=True)
+            if top_k:
+                results = results[:top_k]
+            return results
+        except Exception as e:
+            logger.warning("Re-ranking failed: %s, returning unranked", e)
+            return [(doc_id, 0.5) for doc_id, _ in documents]

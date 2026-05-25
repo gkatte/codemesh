@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import logging
-import sqlite3
 from pathlib import Path
 
 from codemesh.context.builder import ContextBuilder, ContextFormat, ContextOptions
 from codemesh.db.connection import get_connection, get_db_path
 from codemesh.db.queries import get_all_nodes, search_nodes_fts
 from codemesh.db.schema import init_db
-from codemesh.embedding.model import EmbeddingModel, VectorStore
+from codemesh.embedding.model import CrossEncoderReranker, EmbeddingModel, VectorStore
 from codemesh.graph.traverser import GraphTraverser
 from codemesh.retrieval import reciprocal_rank_fusion
 from codemesh.types import Node
@@ -24,6 +23,7 @@ def query_codebase(
     limit: int = 10,
     fmt: str = "xml",
     alpha: float = 0.5,
+    rerank: bool = True,
 ) -> str:
     """Query the indexed codebase using hybrid retrieval.
 
@@ -36,6 +36,7 @@ def query_codebase(
         limit: Maximum number of results to return.
         fmt: Output format — "xml" or "markdown".
         alpha: RRF weight for structural results (1-alpha for semantic).
+        rerank: Whether to apply cross-encoder re-ranking.
     """
     db_path = get_db_path(root)
     init_db(db_path)
@@ -56,6 +57,11 @@ def query_codebase(
 
         if not fused:
             return f"No results for: {query}"
+
+        # ── Cross-encoder re-ranking ─────────────────────────────────
+        # Only re-rank if we have enough results and embeddings exist
+        if rerank and semantic_results:
+            fused = _rerank_results(conn, root, query, fused, limit=limit * 2)
 
         # ── Build context ────────────────────────────────────────────
         format_enum = ContextFormat.XML if fmt == "xml" else ContextFormat.MARKDOWN
@@ -88,7 +94,7 @@ def get_context(root: Path, query: str, max_tokens: int = 8000) -> str:
             nodes_with_scores = reciprocal_rank_fusion(structural, semantic)
 
         if not nodes_with_scores:
-            return f"<code_context query=\"{query}\">\n  No results found.\n</code_context>"
+            return f'<code_context query="{query}">\n  No results found.\n</code_context>'
 
         builder = ContextBuilder(conn, root)
         return builder.build(
@@ -101,9 +107,7 @@ def get_context(root: Path, query: str, max_tokens: int = 8000) -> str:
 # ── Internal helpers ──────────────────────────────────────────────────────
 
 
-def _structural_search(
-    conn, query: str, top_k: int = 30
-) -> list[tuple[Node, float]]:
+def _structural_search(conn, query: str, top_k: int = 30) -> list[tuple[Node, float]]:
     """FTS5 search + graph walk expansion."""
     candidates = search_nodes_fts(conn, query, limit=top_k)
     if not candidates:
@@ -138,18 +142,14 @@ def _structural_search(
     return results[:top_k]
 
 
-def _semantic_search(
-    conn, query: str, top_k: int = 30
-) -> list[tuple[Node, float]]:
+def _semantic_search(conn, query: str, top_k: int = 30) -> list[tuple[Node, float]]:
     """Embedding-based semantic similarity search.
 
     Returns empty list if no embeddings are indexed or if the embedding
     model fails to load.
     """
     # Check if any embeddings exist before trying to load the model
-    row = conn.execute(
-        "SELECT total_vectors FROM embedding_index_meta LIMIT 1"
-    ).fetchone()
+    row = conn.execute("SELECT total_vectors FROM embedding_index_meta LIMIT 1").fetchone()
     if row is None or row[0] == 0:
         return []
 
@@ -172,9 +172,7 @@ def _semantic_search(
     return results
 
 
-def _try_symbol_lookup(
-    conn, query: str
-) -> list[tuple[Node, float]] | None:
+def _try_symbol_lookup(conn, query: str) -> list[tuple[Node, float]] | None:
     """Try to find an exact symbol match. Returns None if not found."""
     nodes = get_all_nodes(conn)
     # Try qualified name first
@@ -196,3 +194,66 @@ def _get_node_safe(conn, node_id: str) -> Node | None:
         return get_node(conn, node_id)
     except Exception:
         return None
+
+
+def _rerank_results(
+    conn,
+    root: Path,
+    query: str,
+    fused: list[tuple[Node, float]],
+    limit: int = 20,
+) -> list[tuple[Node, float]]:
+    """Re-rank fused results using a cross-encoder.
+
+    Takes the top candidates from RRF fusion, extracts their source text,
+    and re-scores them with a cross-encoder model. This filters out
+    false positives from embedding search (e.g., stemmer matching
+    "claude-code" on unrelated English text).
+    """
+    if not fused:
+        return fused
+
+    reranker = CrossEncoderReranker()
+    # Build (id, text) pairs for re-ranking
+    documents: list[tuple[str, str]] = []
+    node_map: dict[str, Node] = {}
+    for node, _score in fused[:limit]:
+        text = _get_node_text(conn, root, node)
+        documents.append((node.id, text))
+        node_map[node.id] = node
+
+    reranked = reranker.rerank(query, documents, top_k=limit, threshold=0.1)
+
+    results: list[tuple[Node, float]] = []
+    for node_id, score in reranked:
+        if node_id in node_map:
+            results.append((node_map[node_id], score))
+
+    # If re-ranking filtered everything, fall back to original
+    if not results:
+        return fused
+
+    return results
+
+
+def _get_node_text(conn, root: Path, node: Node) -> str:
+    """Extract the source text for a node."""
+    parts: list[str] = []
+    if node.signature:
+        parts.append(node.signature)
+    if node.docstring:
+        parts.append(node.docstring)
+    try:
+        fp = root / node.file_path if not node.file_path.is_absolute() else node.file_path
+        if fp.exists():
+            source = fp.read_text(encoding="utf-8", errors="replace")
+            lines = source.splitlines()
+            start = max(0, node.start_line - 1)
+            end = min(len(lines), node.end_line)
+            if end - start <= 50:  # Cap at 50 lines to avoid huge contexts
+                parts.append("\n".join(lines[start:end]))
+            else:
+                parts.append("\n".join(lines[start : start + 50]))
+    except Exception:
+        pass
+    return "\n\n".join(parts) if parts else node.qualified_name
