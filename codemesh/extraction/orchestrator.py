@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import tree_sitter
@@ -112,8 +112,12 @@ class ExtractionOrchestrator:
         all_nodes: list[Node] = []
         all_edges: list[Edge] = []
 
-        # Process files in parallel
-        with ProcessPoolExecutor(max_workers=self.max_workers) as executor:
+        # Use ThreadPoolExecutor instead of ProcessPoolExecutor.
+        # ProcessPoolExecutor on macOS can deadlock/fork-bomb when the main
+        # process has large memory-mapped libraries (tree-sitter, etc.).
+        # Tree-sitter parsing is fast enough that GIL contention is not a bottleneck.
+        workers = self.max_workers or min(8, len(files)) or 1
+        with ThreadPoolExecutor(max_workers=workers) as executor:
             futures = {executor.submit(_parse_file, f): f for f in files}
             for future in as_completed(futures):
                 file_path = futures[future]
