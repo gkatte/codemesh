@@ -13,7 +13,7 @@ from codemesh.types import Node
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "dunzhang/stella_en_1.5B_v5"
+DEFAULT_MODEL = "thenlper/gte-large"
 DEFAULT_DIMENSIONS = 1024
 DEFAULT_RERANKER = "BAAI/bge-reranker-v2-m3"
 
