@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import socket
 from pathlib import Path
 
 from codemesh.context.builder import ContextBuilder, ContextFormat, ContextOptions
@@ -15,6 +17,73 @@ from codemesh.retrieval import reciprocal_rank_fusion
 from codemesh.types import Node
 
 logger = logging.getLogger(__name__)
+
+_DAEMON_SOCKET = Path.home() / ".cache" / "codemesh" / "embed.sock"
+
+
+def _daemon_request(endpoint: str, data: dict, timeout: float = 30.0) -> dict | None:
+    """Send a request to the embedding daemon. Returns None if daemon unavailable."""
+    if not _DAEMON_SOCKET.exists():
+        return None
+    try:
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        sock.connect(str(_DAEMON_SOCKET))
+        body = json.dumps(data).encode()
+        request = (
+            f"POST {endpoint} HTTP/1.1\r\n"
+            f"Host: localhost\r\n"
+            f"Content-Type: application/json\r\n"
+            f"Content-Length: {len(body)}\r\n"
+            f"Connection: close\r\n"
+            f"\r\n"
+        ).encode() + body
+        sock.sendall(request)
+        # Read response (daemon closes connection after response)
+        response = b""
+        while True:
+            chunk = sock.recv(65536)
+            if not chunk:
+                break
+            response += chunk
+        sock.close()
+        # Parse JSON from body
+        header_end = response.index(b"\r\n\r\n")
+        content_length = 0
+        headers = response[:header_end].decode()
+        for line in headers.split("\r\n"):
+            if line.lower().startswith("content-length:"):
+                content_length = int(line.split(":")[1].strip())
+        body = response[header_end + 4 : header_end + 4 + content_length]
+        return json.loads(body.decode())
+    except Exception as e:
+        logger.debug("Daemon request failed: %s", e)
+        return None
+
+
+def _daemon_encode(text: str) -> list[float] | None:
+    """Encode a single text via the daemon. Returns None if daemon unavailable."""
+    result = _daemon_request("/embed", {"texts": [text]})
+    if result and "embeddings" in result and len(result["embeddings"]) > 0:
+        return result["embeddings"][0]
+    return None
+
+
+def _daemon_rerank(
+    query: str,
+    documents: list[tuple[str, str]],
+    threshold: float = 0.3,
+    top_k: int | None = None,
+) -> list[tuple[str, float]] | None:
+    """Re-rank documents via the daemon. Returns None if daemon unavailable."""
+    docs = [{"id": doc_id, "text": text} for doc_id, text in documents]
+    result = _daemon_request(
+        "/rerank",
+        {"query": query, "documents": docs, "threshold": threshold, "top_k": top_k},
+    )
+    if result and "results" in result:
+        return [(r[0], r[1]) for r in result["results"]]
+    return None
 
 
 def query_codebase(
@@ -145,6 +214,7 @@ def _structural_search(conn, query: str, top_k: int = 30) -> list[tuple[Node, fl
 def _semantic_search(conn, query: str, top_k: int = 30) -> list[tuple[Node, float]]:
     """Embedding-based semantic similarity search.
 
+    Tries daemon first (fast, models already loaded), falls back to in-process.
     Returns empty list if no embeddings are indexed or if the embedding
     model fails to load.
     """
@@ -154,9 +224,14 @@ def _semantic_search(conn, query: str, top_k: int = 30) -> list[tuple[Node, floa
         return []
 
     try:
-        model = EmbeddingModel()
-        store = VectorStore(conn, model.dimensions)
-        query_emb = model.encode_single(query)
+        # Try daemon first (fast path — models already loaded)
+        query_emb = _daemon_encode(query)
+        if query_emb is None:
+            # Daemon not available, fall back to in-process
+            model = EmbeddingModel()
+            query_emb = model.encode_single(query)
+
+        store = VectorStore(conn, len(query_emb))
         hits = store.search(query_emb, top_k=top_k)
     except Exception as e:
         logger.warning("Semantic search failed (%s), returning empty", e)
@@ -206,23 +281,28 @@ def _rerank_results(
     """Re-rank fused results using a cross-encoder.
 
     Takes the top candidates from RRF fusion, extracts their source text,
-    and re-scores them with a cross-encoder model. This filters out
-    false positives from embedding search (e.g., stemmer matching
-    "claude-code" on unrelated English text).
+    and re-scores them with a cross-encoder model. Returns results sorted
+    by re-ranker score (descending), limited to top N per file.
     """
     if not fused:
         return fused
 
-    reranker = CrossEncoderReranker()
-    # Build (id, text) pairs for re-ranking
+    # Try daemon first (fast path — models already loaded)
     documents: list[tuple[str, str]] = []
     node_map: dict[str, Node] = {}
-    for node, _score in fused[:limit]:
+    # Only re-rank top N docs (more = exponentially slower on CPU)
+    rerank_k = min(len(fused), 5)
+    for node, _score in fused[:rerank_k]:
         text = _get_node_text(conn, root, node)
         documents.append((node.id, text))
         node_map[node.id] = node
 
-    reranked = reranker.rerank(query, documents, top_k=limit, threshold=0.1)
+    # Use daemon if available, otherwise fall back to in-process
+    # Note: threshold=0.0 because ONNX model produces scores in [0, 0.1] range
+    reranked = _daemon_rerank(query, documents, threshold=0.0, top_k=limit)
+    if reranked is None:
+        reranker = CrossEncoderReranker()
+        reranked = reranker.rerank(query, documents, top_k=limit, threshold=0.0)
 
     results: list[tuple[Node, float]] = []
     for node_id, score in reranked:
@@ -237,7 +317,7 @@ def _rerank_results(
 
 
 def _get_node_text(conn, root: Path, node: Node) -> str:
-    """Extract the source text for a node."""
+    """Extract the source text for a node (truncated for re-ranking)."""
     parts: list[str] = []
     if node.signature:
         parts.append(node.signature)
@@ -250,10 +330,11 @@ def _get_node_text(conn, root: Path, node: Node) -> str:
             lines = source.splitlines()
             start = max(0, node.start_line - 1)
             end = min(len(lines), node.end_line)
-            if end - start <= 50:  # Cap at 50 lines to avoid huge contexts
-                parts.append("\n".join(lines[start:end]))
-            else:
-                parts.append("\n".join(lines[start : start + 50]))
+            # Cap at 30 lines for re-ranking (enough for key signal)
+            code_lines = lines[start : min(end, start + 30)]
+            parts.append("\n".join(code_lines))
     except Exception:
         pass
-    return "\n\n".join(parts) if parts else node.qualified_name
+    text = "\n\n".join(parts) if parts else node.qualified_name
+    # Truncate to 200 chars for re-ranking speed (longer = much slower on CPU)
+    return text[:200]

@@ -64,6 +64,8 @@ class PythonExtractor:
             self._extract_import(source, node, file_path, parent_id, nodes, edges)
         elif kind == "assignment":
             self._extract_assignment(source, node, file_path, parent_id, nodes, edges)
+        elif kind == "annotated_assignment":
+            self._extract_annotated_assignment(source, node, file_path, parent_id, nodes, edges)
         else:
             # Recurse into children
             for child in node.children:
@@ -292,8 +294,70 @@ class PythonExtractor:
         end_line = node.end_point[0] + 1
         node_id = self._node_id(file_path, start_line, end_line)
 
-        # Heuristic: ALL_CAPS → constant, otherwise → variable
-        is_constant = name.isupper() and len(name) > 1
+        # Heuristic for constant detection:
+        # - SCREAMING_SNAKE_CASE (all uppercase + underscores) → CONSTANT
+        # - MixedCase or lowercase → VARIABLE
+        has_upper = any(c.isupper() for c in name)
+        has_lower = any(c.islower() for c in name)
+        is_constant = has_upper and not has_lower and len(name) > 1
+        kind = NodeKind.CONSTANT if is_constant else NodeKind.VARIABLE
+
+        qualified = self._build_qualified_name(file_path, name, parent_id, nodes)
+        var_node = Node(
+            id=node_id,
+            kind=kind,
+            name=name,
+            qualified_name=qualified,
+            file_path=file_path,
+            language=Language.PYTHON,
+            start_line=start_line,
+            end_line=end_line,
+            start_column=node.start_point[1],
+            end_column=node.end_point[1],
+            parent_id=parent_id,
+        )
+        nodes.append(var_node)
+        edges.append(
+            Edge(
+                id=self._edge_id(parent_id, node_id, EdgeKind.CONTAINS),
+                source_id=parent_id,
+                target_id=node_id,
+                kind=EdgeKind.CONTAINS,
+            )
+        )
+
+    def _extract_annotated_assignment(
+        node: Any,
+        file_path: Path,
+        parent_id: str,
+        nodes: list[Node],
+        edges: list[Edge],
+    ) -> None:
+        """Extract type-annotated assignments like `MAX_SIZE: int = 100`.
+
+        These are common in Python for typed constants and module-level variables.
+        Only extracts module-level annotated assignments (parent is module).
+        Heuristic: name is UPPER_CASE → CONSTANT, else → VARIABLE.
+        """
+        # Only extract module-level
+        if node.parent and node.parent.type != "module":
+            return
+
+        lhs = node.child_by_field_name("left")
+        if lhs is None or lhs.type != "identifier":
+            return
+
+        name = source[lhs.start_byte : lhs.end_byte].decode()
+        if name.startswith("_"):
+            return
+
+        start_line = node.start_point[0] + 1
+        end_line = node.end_point[0] + 1
+        node_id = self._node_id(file_path, start_line, end_line)
+
+        has_upper = any(c.isupper() for c in name)
+        has_lower = any(c.islower() for c in name)
+        is_constant = has_upper and not has_lower and len(name) > 1
         kind = NodeKind.CONSTANT if is_constant else NodeKind.VARIABLE
 
         qualified = self._build_qualified_name(file_path, name, parent_id, nodes)

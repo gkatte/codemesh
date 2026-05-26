@@ -18,10 +18,11 @@ class ContextFormat(Enum):
 
 @dataclass
 class ContextOptions:
-    max_tokens: int = 4000  # Tighter default — ~1000 tokens for focused context
-    max_snippets: int = 10  # Fewer, more relevant snippets
-    max_lines_per_snippet: int = 30  # Cap snippet size
-    context_margin: int = 2  # Smaller margin
+    max_tokens: int = 2000  # Tight default — ~500 tokens for focused context
+    max_snippets: int = 5   # Fewer, more relevant snippets
+    max_lines_per_snippet: int = 20  # Cap snippet size
+    context_margin: int = 0  # No extra margin — just the symbol itself
+    max_per_file: int = 2  # Cap snippets per file to avoid domination
     include_graph_summary: bool = True
     format: ContextFormat = ContextFormat.XML
 
@@ -81,13 +82,19 @@ class ContextBuilder:
         deduped = self._deduplicate(snippets)
         total_tokens = 0
         selected: list[Snippet] = []
+        file_counts: dict[Path, int] = {}
 
         for snippet in deduped:
             tokens = estimate_tokens(snippet.code)
             if total_tokens + tokens > options.max_tokens or len(selected) >= options.max_snippets:
                 break
+            # Per-file cap: max N snippets per file
+            fc = file_counts.get(snippet.file_path, 0)
+            if fc >= options.max_per_file:
+                continue
             selected.append(snippet)
             total_tokens += tokens
+            file_counts[snippet.file_path] = fc + 1
 
         if options.format == ContextFormat.XML:
             return self._format_xml(selected, query)

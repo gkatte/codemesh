@@ -46,7 +46,9 @@ def _register_all() -> None:
     try:
         from codemesh.extraction.languages.typescript import TypeScriptExtractor
 
-        register_extractor(Language.TYPESCRIPT, TypeScriptExtractor())
+        ts_extractor = TypeScriptExtractor()
+        register_extractor(Language.TYPESCRIPT, ts_extractor)
+        register_extractor(Language.JAVASCRIPT, ts_extractor)
     except ImportError:
         pass
 

@@ -1,5 +1,15 @@
-"""TypeScript/JavaScript tree-sitter extractor."""
+"""TypeScript/JavaScript tree-sitter extractor.
 
+Handles:
+- function_declaration, arrow_function, function_expression
+- class_declaration with method_definition, property_definition
+- import_statement, import_clause
+- interface_declaration, type_alias_declaration, enum_declaration
+- variable_declaration, lexical_declaration (const/let/var)
+- export_statement (all inner declaration types)
+- object_method_definition (shorthand methods in object literals)
+- public_field_definition (class fields)
+"""
 from __future__ import annotations
 
 import hashlib
@@ -13,7 +23,12 @@ logger = logging.getLogger(__name__)
 
 
 class TypeScriptExtractor:
-    """Extracts TypeScript/JavaScript code symbols from tree-sitter AST."""
+    """Extracts TypeScript/JavaScript code symbols from tree-sitter AST.
+
+    Handles both .ts/.tsx (TypeScript) and .js/.jsx (JavaScript) files.
+    JavaScript files use the same extractor — the tree-sitter grammar is
+    shared (tsx grammar covers both).
+    """
 
     def extract(
         self,
@@ -40,6 +55,8 @@ class TypeScriptExtractor:
 
         self._walk(source, root_node, file_path, file_id, nodes, edges)
         return nodes, edges
+
+    # ── Top-level dispatch ──────────────────────────────────────────────
 
     def _walk(
         self,
@@ -68,15 +85,28 @@ class TypeScriptExtractor:
             self._extract_enum(source, node, file_path, parent_id, nodes, edges)
         elif kind == "variable_declaration":
             self._extract_variable(source, node, file_path, parent_id, nodes, edges)
-        elif kind == "export_statement":
-            # Walk into export statements to find the inner declaration
-            self._handle_export(source, node, file_path, parent_id, nodes, edges)
         elif kind == "lexical_declaration":
-            # let/const declarations (TS/JS)
             self._extract_lexical(source, node, file_path, parent_id, nodes, edges)
+        elif kind == "export_statement":
+            self._handle_export(source, node, file_path, parent_id, nodes, edges)
+        elif kind == "function_signature":
+            # TypeScript function overload signatures
+            self._extract_function_signature(source, node, file_path, parent_id, nodes, edges)
+        elif kind == "method_signature":
+            # TypeScript method signatures in interfaces
+            self._extract_method_signature(source, node, file_path, parent_id, nodes, edges)
+        elif kind == "public_field_definition":
+            # Class fields (TypeScript 3.8+): class Foo { bar = 1; }
+            self._extract_public_field(source, node, file_path, parent_id, nodes, edges)
+        elif kind == "assignment":
+            # JS: function assigned to variable → treat as function
+            # e.g., module.exports.foo = function() {}
+            self._extract_assignment_pattern(source, node, file_path, parent_id, nodes, edges)
         else:
             for child in node.children:
                 self._walk(source, child, file_path, parent_id, nodes, edges)
+
+    # ── Function / Method ───────────────────────────────────────────────
 
     def _extract_function(
         self,
@@ -162,6 +192,11 @@ class TypeScriptExtractor:
         self._extract_calls(source, node, node_id, file_path, edges)
         return node_id
 
+    _extract_function_signature = _extract_function  # same logic, TS overload
+    _extract_method_signature = _extract_method      # same logic, interface method sig
+
+    # ── Class ───────────────────────────────────────────────────────────
+
     def _extract_class(
         self,
         source: bytes,
@@ -227,6 +262,8 @@ class TypeScriptExtractor:
             for child in body.children:
                 self._walk(source, child, file_path, node_id, nodes, edges)
         return node_id
+
+    # ── Interface / Type Alias / Enum ───────────────────────────────────
 
     def _extract_interface(
         self,
@@ -386,6 +423,8 @@ class TypeScriptExtractor:
             )
         )
 
+    # ── Variables / Constants ───────────────────────────────────────────
+
     def _extract_variable(
         self,
         source: bytes,
@@ -400,10 +439,9 @@ class TypeScriptExtractor:
         Handles:
         - const FOO = value  → CONSTANT
         - let foo = value    → VARIABLE
-        - var foo = value    → VARIABLE
         - const fn = () =>   → FUNCTION (arrow function)
+        - module.exports =   → captures the object literal methods
         """
-        # Determine kind from the declaration type
         node_text = source[node.start_byte : node.end_byte].decode("utf-8", errors="replace")
         is_const = node_text.strip().startswith("const")
 
@@ -459,7 +497,11 @@ class TypeScriptExtractor:
         end_line = node.end_point[0] + 1
         node_id = self._node_id(file_path, start_line, end_line)
 
-        kind = NodeKind.CONSTANT if is_const else NodeKind.VARIABLE
+        # Better constant heuristic: UPPER_CASE or const with primitive value
+        has_upper = any(c.isupper() for c in name)
+        has_lower = any(c.islower() for c in name)
+        is_constant = is_const and has_upper and not has_lower and len(name) > 1
+        kind = NodeKind.CONSTANT if is_constant else NodeKind.VARIABLE
         qualified = self._build_qualified_name(file_path, name, parent_id, nodes)
         var_node = Node(
             id=node_id,
@@ -482,6 +524,92 @@ class TypeScriptExtractor:
             )
         )
 
+    def _extract_public_field(
+        self,
+        source: bytes,
+        node: Any,
+        file_path: Path,
+        parent_id: str,
+        nodes: list[Node],
+        edges: list[Edge],
+    ) -> None:
+        """Extract class field declarations (public_field_definition).
+
+        TypeScript class fields: class Foo { bar = 1; }
+        """
+        name_node = node.child_by_field_name("name")
+        if name_node is None:
+            return
+        name = source[name_node.start_byte : name_node.end_byte].decode()
+        start_line = node.start_point[0] + 1
+        end_line = node.end_point[0] + 1
+        node_id = self._node_id(file_path, start_line, end_line)
+        qualified = self._build_qualified_name(file_path, name, parent_id, nodes)
+        field_node = Node(
+            id=node_id,
+            kind=NodeKind.VARIABLE,
+            name=name,
+            qualified_name=qualified,
+            file_path=file_path,
+            language=Language.TYPESCRIPT,
+            start_line=start_line,
+            end_line=end_line,
+            parent_id=parent_id,
+        )
+        nodes.append(field_node)
+        edges.append(
+            Edge(
+                id=self._edge_id(parent_id, node_id, EdgeKind.CONTAINS),
+                source_id=parent_id,
+                target_id=node_id,
+                kind=EdgeKind.CONTAINS,
+            )
+        )
+
+    def _extract_assignment_pattern(
+        self,
+        source: bytes,
+        node: Any,
+        file_path: Path,
+        parent_id: str,
+        nodes: list[Node],
+        edges: list[Edge],
+    ) -> None:
+        """Extract JS assignment patterns like module.exports.foo = function() {}.
+
+        Only extracts module-level assignments (parent is program/statement_block)
+        that assign arrow functions or function expressions.
+        """
+        if node.parent and node.parent.type not in ("program", "statement_block", "module"):
+            return
+
+        left = node.child_by_field_name("left")
+        right = node.child_by_field_name("right")
+        if left is None or right is None:
+            return
+
+        # Only extract if right side is a function
+        if right.type not in ("arrow_function", "function"):
+            return
+
+        # Get name from left side
+        if left.type == "identifier":
+            name = source[left.start_byte : left.end_byte].decode()
+        elif left.type == "member_expression":
+            prop = left.child_by_field_name("property")
+            if prop is None:
+                return
+            name = source[prop.start_byte : prop.end_byte].decode()
+        else:
+            return
+
+        if name.startswith("_") and len(name) <= 2:
+            return
+
+        self._extract_function(source, right, file_path, parent_id, nodes, edges)
+
+    # ── Export handling ─────────────────────────────────────────────────
+
     def _handle_export(
         self,
         source: bytes,
@@ -491,26 +619,41 @@ class TypeScriptExtractor:
         nodes: list[Node],
         edges: list[Edge],
     ) -> None:
-        """Walk into export statements to extract the inner declaration."""
+        """Walk into export statements to extract the inner declaration.
+
+        Handles:
+        - export function_declaration
+        - export class_declaration
+        - export lexical_declaration (const/let)
+        - export variable_declaration
+        - export default function_declaration
+        - export type_alias_declaration
+        - export enum_declaration
+        - export interface_declaration
+        - export { ... } (re-exports, skipped)
+        """
         for child in node.children:
             kind = child.type
             if kind == "function_declaration":
                 self._extract_function(source, child, file_path, parent_id, nodes, edges)
             elif kind == "class_declaration":
                 self._extract_class(source, child, file_path, parent_id, nodes, edges)
-            elif kind == "interface_declaration":
-                self._extract_interface(source, child, file_path, parent_id, nodes, edges)
+            elif kind == "lexical_declaration":
+                self._extract_lexical(source, child, file_path, parent_id, nodes, edges)
+            elif kind == "variable_declaration":
+                self._extract_variable(source, child, file_path, parent_id, nodes, edges)
             elif kind == "type_alias_declaration":
                 self._extract_type_alias(source, child, file_path, parent_id, nodes, edges)
             elif kind == "enum_declaration":
                 self._extract_enum(source, child, file_path, parent_id, nodes, edges)
-            elif kind == "variable_declaration":
-                self._extract_variable(source, child, file_path, parent_id, nodes, edges)
-            elif kind == "lexical_declaration":
-                self._extract_lexical(source, child, file_path, parent_id, nodes, edges)
+            elif kind == "interface_declaration":
+                self._extract_interface(source, child, file_path, parent_id, nodes, edges)
             else:
-                # Recurse further for nested structures
+                # Recurse deeper for nested export patterns
+                # e.g., export default () => {} or export { named }
                 self._walk(source, child, file_path, parent_id, nodes, edges)
+
+    # ── Call extraction ─────────────────────────────────────────────────
 
     def _extract_calls(
         self,
@@ -549,6 +692,8 @@ class TypeScriptExtractor:
                 )
         for child in node.children:
             self._find_calls(source, child, caller_id, file_path, edges)
+
+    # ── Helpers ─────────────────────────────────────────────────────────
 
     def _find_function_name(self, node: Any) -> Any:
         """Try to find function name from parent variable declarator."""

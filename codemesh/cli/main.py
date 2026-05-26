@@ -89,6 +89,40 @@ def serve(
 
 
 @app.command()
+def serve_embed(
+    foreground: bool = typer.Option(False, "--fg", help="Run in foreground (default: daemonize)"),
+) -> None:
+    """Start the embedding daemon for fast semantic search.
+
+    Keeps embedding + re-ranker models loaded in memory.
+    CLI queries automatically use the daemon when available.
+    Auto-shuts down after 5 minutes of idle time.
+    """
+    from codemesh.embedding.daemon import start_daemon, is_daemon_running
+
+    if is_daemon_running():
+        typer.echo("Embedding daemon is already running.")
+        raise typer.Exit(0)
+
+    if foreground:
+        typer.echo("Starting embedding daemon (foreground)...")
+        start_daemon()
+    else:
+        import os
+        import subprocess
+        import sys
+
+        typer.echo("Starting embedding daemon (background)...")
+        subprocess.Popen(
+            [sys.executable, "-m", "codemesh.embedding.daemon"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        typer.echo("Daemon started.")
+
+
+@app.command()
 def graph(
     path: str = typer.Option(".", "--path", "-p", help="Path to the indexed codebase"),
     port: int = typer.Option(8765, "--port", help="Port for the visualization server"),
