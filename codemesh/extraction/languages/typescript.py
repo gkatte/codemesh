@@ -128,6 +128,8 @@ class TypeScriptExtractor:
         end_line = node.end_point[0] + 1
         node_id = self._node_id(file_path, start_line, end_line)
 
+        signature = self._build_ts_signature(source, name, node)
+        docstring = self._extract_ts_docstring(source, node)
         qualified = self._build_qualified_name(file_path, name, parent_id, nodes)
         func_node = Node(
             id=node_id,
@@ -139,6 +141,8 @@ class TypeScriptExtractor:
             start_line=start_line,
             end_line=end_line,
             parent_id=parent_id,
+            signature=signature,
+            docstring=docstring,
         )
         nodes.append(func_node)
         edges.append(
@@ -168,6 +172,8 @@ class TypeScriptExtractor:
         start_line = node.start_point[0] + 1
         end_line = node.end_point[0] + 1
         node_id = self._node_id(file_path, start_line, end_line)
+        signature = self._build_ts_signature(source, name, node)
+        docstring = self._extract_ts_docstring(source, node)
         qualified = self._build_qualified_name(file_path, name, parent_id, nodes)
         method_node = Node(
             id=node_id,
@@ -179,6 +185,8 @@ class TypeScriptExtractor:
             start_line=start_line,
             end_line=end_line,
             parent_id=parent_id,
+            signature=signature,
+            docstring=docstring,
         )
         nodes.append(method_node)
         edges.append(
@@ -282,6 +290,7 @@ class TypeScriptExtractor:
         end_line = node.end_point[0] + 1
         node_id = self._node_id(file_path, start_line, end_line)
         qualified = self._build_qualified_name(file_path, name, parent_id, nodes)
+        docstring = self._extract_ts_docstring(source, node)
         iface_node = Node(
             id=node_id,
             kind=NodeKind.INTERFACE,
@@ -292,6 +301,7 @@ class TypeScriptExtractor:
             start_line=start_line,
             end_line=end_line,
             parent_id=parent_id,
+            docstring=docstring,
         )
         nodes.append(iface_node)
         edges.append(
@@ -701,6 +711,70 @@ class TypeScriptExtractor:
         if parent and parent.type == "variable_declarator":
             return parent.child_by_field_name("name")
         return None
+
+    def _build_ts_signature(self, source: bytes, name: str, node: Any) -> str:
+        """Build a TypeScript function/method signature string.
+
+        Extracts parameters and return type from the AST node.
+        """
+        params_node = node.child_by_field_name("parameters")
+        params_str = "(...)"
+        if params_node:
+            params_str = source[params_node.start_byte : params_node.end_byte].decode(
+                "utf-8", errors="replace"
+            )
+        return_node = node.child_by_field_name("return_type")
+        if return_node:
+            ret = source[return_node.start_byte : return_node.end_byte].decode(
+                "utf-8", errors="replace"
+            )
+            return f"function {name}{params_str}{ret}"
+        return f"function {name}{params_str}"
+
+    def _extract_ts_docstring(self, source: bytes, node: Any) -> str:
+        """Extract the JSDoc/TSdoc comment preceding a function/method.
+
+        Looks for comment nodes that immediately precede the function node,
+        or the first string literal in the function body.
+        """
+        # Check for leading comment nodes
+        prev = node.prev_sibling
+        if prev and prev.type == "comment":
+            text = source[prev.start_byte : prev.end_byte].decode("utf-8", errors="replace")
+            # Strip // or /* */ markers
+            text = text.strip()
+            if text.startswith("//"):
+                return text[2:].strip()
+            if text.startswith("/*"):
+                text = text[2:]
+                if text.endswith("*/"):
+                    text = text[:-2]
+                # Remove leading * from each line (JSDoc style)
+                lines = text.split("\n")
+                cleaned = []
+                for line in lines:
+                    line = line.strip()
+                    if line.startswith("*"):
+                        line = line[1:].strip()
+                    if line and not line.startswith("@"):  # Skip @param/@returns tags
+                        cleaned.append(line)
+                return " ".join(cleaned[:5])  # First 5 non-tag lines
+            return text
+
+        # Fall back to first statement in body (string literal / expression)
+        body = node.child_by_field_name("body")
+        if body and body.children:
+            first = body.children[0]
+            if (
+                first.type == "expression_statement"
+                and first.children
+                and first.children[0].type == "string"
+            ):
+                raw = source[first.children[0].start_byte : first.children[0].end_byte].decode(
+                    "utf-8", errors="replace"
+                )
+                return raw.strip("'\"").strip()
+        return ""
 
     def _build_qualified_name(
         self,
