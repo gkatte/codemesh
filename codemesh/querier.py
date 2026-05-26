@@ -291,9 +291,8 @@ def _rerank_results(
     # Try daemon first (fast path — models already loaded)
     documents: list[tuple[str, str]] = []
     node_map: dict[str, Node] = {}
-    # Re-rank top N docs from fused list (more = exponentially slower on CPU)
-    # With ONNX: 5 docs=0.15s, 10 docs=1.3s, 15 docs=2.8s
-    rerank_k = min(len(fused), 10)
+    # Re-rank top N docs from fused list
+    rerank_k = min(len(fused), 5)
     for node, _score in fused[:rerank_k]:
         text = _get_node_text(conn, root, node)
         documents.append((node.id, text))
