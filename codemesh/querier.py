@@ -58,8 +58,8 @@ def query_codebase(
     2. LIKE-based substring fallback for camelCase matching
     3. Fuzzy edit-distance fallback for typos
 
-    Post-hoc scoring: kind bonus + name match bonus.
-    Graph walk expansion (BFS depth=2) finds related symbols.
+    Post-hoc scoring: kind bonus + name match bonus + exported bonus.
+    Graph walk expansion (BFS depth=1) finds related symbols.
     """
     db_path = get_db_path(root)
     init_db(db_path)
@@ -70,12 +70,42 @@ def query_codebase(
         if not results:
             return f"No results for: {query}"
 
-        format_enum = ContextFormat.XML if fmt == "xml" else ContextFormat.MARKDOWN
+        # Separate BM25 seeds from graph-walk nodes
+        # _bm25_search returns (Node, score) tuples
+        # We need to track which are seeds vs graph-expanded
+        format_enum = ContextFormat.XML if fmt == "xml" else (
+            ContextFormat.STRUCTURED if fmt == "structured" else ContextFormat.MARKDOWN
+        )
         builder = ContextBuilder(conn, root)
+
+        if format_enum == ContextFormat.STRUCTURED:
+            # For structured format, pass entry_points and related separately
+            entry_points = results[:5]
+            related = results[5:] if len(results) > 5 else []
+            return builder.build(
+                results,
+                query,
+                ContextOptions(
+                    max_snippets=5,
+                    max_tokens=2000,
+                    max_lines_per_snippet=12,
+                    format=format_enum,
+                ),
+                entry_points=entry_points,
+                related=related,
+            )
+
         return builder.build(
             results,
             query,
-            ContextOptions(max_snippets=limit, format=format_enum),
+            ContextOptions(
+                max_snippets=3,
+                max_tokens=1200,
+                max_lines_per_snippet=10,
+                max_snippet_chars=600,
+                max_per_file=1,
+                format=format_enum,
+            ),
         )
 
 
@@ -132,12 +162,12 @@ def _bm25_search(conn, query: str, top_k: int = 30) -> list[tuple[Node, float]]:
         seen.add(node.id)
         results.append((node, score))
 
-        # Expand via graph walk (BFS depth=2)
+        # Expand via graph walk (BFS depth=1)
         subgraph = traverser.traverse(
             conn,
             [node.id],
-            max_depth=2,
-            max_nodes=20,
+            max_depth=1,
+            max_nodes=10,
         )
         for nid, tr in subgraph.nodes.items():
             if nid not in seen:

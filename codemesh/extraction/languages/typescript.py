@@ -136,6 +136,13 @@ class TypeScriptExtractor:
         signature = self._build_ts_signature(source, name, node)
         docstring = self._extract_ts_docstring(source, node)
         qualified = self._build_qualified_name(file_path, name, parent_id, nodes)
+
+        # Detect metadata from modifiers
+        is_async = self._has_modifier(source, node, "async")
+        is_exported = self._is_exported(node)
+        is_static = self._has_modifier(source, node, "static")
+        visibility = self._get_visibility(source, node)
+
         func_node = Node(
             id=node_id,
             kind=NodeKind.FUNCTION,
@@ -148,6 +155,10 @@ class TypeScriptExtractor:
             parent_id=parent_id,
             signature=signature,
             docstring=docstring,
+            is_async=is_async,
+            is_exported=is_exported,
+            is_static=is_static,
+            visibility=visibility,
         )
         nodes.append(func_node)
         edges.append(
@@ -159,6 +170,7 @@ class TypeScriptExtractor:
             )
         )
         self._extract_calls(source, node, node_id, file_path, edges)
+        self._extract_type_references(source, node, node_id, file_path, edges)
         return node_id
 
     def _extract_method(
@@ -203,6 +215,7 @@ class TypeScriptExtractor:
             )
         )
         self._extract_calls(source, node, node_id, file_path, edges)
+        self._extract_type_references(source, node, node_id, file_path, edges)
         return node_id
 
     _extract_function_signature = _extract_function  # same logic, TS overload
@@ -229,14 +242,20 @@ class TypeScriptExtractor:
 
         heritage = node.child_by_field_name("heritage_clauses")
         bases: list[str] = []
+        implements: list[str] = []
         if heritage:
             for child in heritage.children:
                 if child.type == "extends_clause":
                     for ident in child.children:
                         if ident.type == "type_identifier":
                             bases.append(source[ident.start_byte : ident.end_byte].decode())
+                elif child.type == "implements_clause":
+                    for ident in child.children:
+                        if ident.type == "type_identifier":
+                            implements.append(source[ident.start_byte : ident.end_byte].decode())
 
         qualified = self._build_qualified_name(file_path, name, parent_id, nodes)
+        is_exported = self._is_exported(node)
         class_node = Node(
             id=node_id,
             kind=NodeKind.CLASS,
@@ -248,6 +267,7 @@ class TypeScriptExtractor:
             end_line=end_line,
             parent_id=parent_id,
             metadata={"bases": ",".join(bases)},
+            is_exported=is_exported,
         )
         nodes.append(class_node)
         edges.append(
@@ -266,6 +286,18 @@ class TypeScriptExtractor:
                     source_id=node_id,
                     target_id=f"unresolved:{base_name}",
                     kind=EdgeKind.EXTENDS,
+                    confidence=0.5,
+                )
+            )
+
+        # Add implements edges
+        for impl_name in implements:
+            edges.append(
+                Edge(
+                    id=self._edge_id(node_id, f"unresolved:{impl_name}", EdgeKind.IMPLEMENTS),
+                    source_id=node_id,
+                    target_id=f"unresolved:{impl_name}",
+                    kind=EdgeKind.IMPLEMENTS,
                     confidence=0.5,
                 )
             )
@@ -512,13 +544,12 @@ class TypeScriptExtractor:
         end_line = node.end_point[0] + 1
         node_id = self._node_id(file_path, start_line, end_line)
 
-        # Wider constant heuristic: UPPER_CASE or const with primitive/uppercase value
+        # Wider constant heuristic:
+        # - All module-level const declarations → CONSTANT
+        # - UPPER_CASE names without const → CONSTANT
         has_upper = any(c.isupper() for c in name)
         has_lower = any(c.islower() for c in name)
-        # const with UPPER_CASE name, or const with a primitive value
-        is_constant = is_const and ((has_upper and not has_lower and len(name) > 1) or
-                                     (value_node is not None and value_node.type in
-                                      ("number", "string", "true", "false", "null")))
+        is_constant = is_const or (has_upper and not has_lower and len(name) > 1)
         kind = NodeKind.CONSTANT if is_constant else NodeKind.VARIABLE
         qualified = self._build_qualified_name(file_path, name, parent_id, nodes)
         var_node = Node(
@@ -553,7 +584,9 @@ class TypeScriptExtractor:
     ) -> None:
         """Extract class field declarations (public_field_definition).
 
-        TypeScript class fields: class Foo { bar = 1; }
+        Handles:
+        - Class fields with arrow functions: class Foo { bar = () => {} } → METHOD
+        - Class fields with values: class Foo { bar = 1 } → VARIABLE
         """
         name_node = node.child_by_field_name("name")
         if name_node is None:
@@ -561,11 +594,149 @@ class TypeScriptExtractor:
         name = source[name_node.start_byte : name_node.end_byte].decode()
         start_line = node.start_point[0] + 1
         end_line = node.end_point[0] + 1
+
+        # Check if the value is an arrow function or function expression → METHOD
+        value_node = node.child_by_field_name("value")
+        if value_node is not None and value_node.type in ("arrow_function", "function_expression"):
+            node_id = self._node_id(file_path, start_line, end_line)
+            signature = self._build_ts_signature(source, name, value_node)
+            docstring = self._extract_ts_docstring(source, value_node)
+            qualified = self._build_qualified_name(file_path, name, parent_id, nodes)
+            method_node = Node(
+                id=node_id,
+                kind=NodeKind.METHOD,
+                name=name,
+                qualified_name=qualified,
+                file_path=file_path,
+                language=Language.TYPESCRIPT,
+                start_line=start_line,
+                end_line=end_line,
+                parent_id=parent_id,
+                signature=signature,
+                docstring=docstring,
+            )
+            nodes.append(method_node)
+            edges.append(
+                Edge(
+                    id=self._edge_id(parent_id, node_id, EdgeKind.CONTAINS),
+                    source_id=parent_id,
+                    target_id=node_id,
+                    kind=EdgeKind.CONTAINS,
+                )
+            )
+            self._extract_calls(source, value_node, node_id, file_path, edges)
+            return
+
+        # Also check for arrow function inside call_expression (HOF pattern)
+        # e.g., class Foo { debounce = throttle(() => {}, 100) }
+        if value_node is not None and value_node.type == "call_expression":
+            args = value_node.child_by_field_name("arguments")
+            if args:
+                for arg in args.children:
+                    if arg.type in ("arrow_function", "function_expression"):
+                        node_id = self._node_id(file_path, start_line, end_line)
+                        signature = self._build_ts_signature(source, name, arg)
+                        docstring = self._extract_ts_docstring(source, arg)
+                        qualified = self._build_qualified_name(file_path, name, parent_id, nodes)
+                        method_node = Node(
+                            id=node_id,
+                            kind=NodeKind.METHOD,
+                            name=name,
+                            qualified_name=qualified,
+                            file_path=file_path,
+                            language=Language.TYPESCRIPT,
+                            start_line=start_line,
+                            end_line=end_line,
+                            parent_id=parent_id,
+                            signature=signature,
+                            docstring=docstring,
+                        )
+                        nodes.append(method_node)
+                        edges.append(
+                            Edge(
+                                id=self._edge_id(parent_id, node_id, EdgeKind.CONTAINS),
+                                source_id=parent_id,
+                                target_id=node_id,
+                                kind=EdgeKind.CONTAINS,
+                            )
+                        )
+                        self._extract_calls(source, arg, node_id, file_path, edges)
+                        return
+
+        # Check if the value is an arrow function or function expression → METHOD (arrow)
+        value_node = node.child_by_field_name("value")
+        if value_node is not None and value_node.type in ("arrow_function", "function_expression"):
+            node_id = self._node_id(file_path, start_line, end_line)
+            signature = self._build_ts_signature(source, name, value_node)
+            docstring = self._extract_ts_docstring(source, value_node)
+            qualified = self._build_qualified_name(file_path, name, parent_id, nodes)
+            method_node = Node(
+                id=node_id,
+                kind=NodeKind.METHOD,
+                name=name,
+                qualified_name=qualified,
+                file_path=file_path,
+                language=Language.TYPESCRIPT,
+                start_line=start_line,
+                end_line=end_line,
+                parent_id=parent_id,
+                signature=signature,
+                docstring=docstring,
+            )
+            nodes.append(method_node)
+            edges.append(
+                Edge(
+                    id=self._edge_id(parent_id, node_id, EdgeKind.CONTAINS),
+                    source_id=parent_id,
+                    target_id=node_id,
+                    kind=EdgeKind.CONTAINS,
+                )
+            )
+            self._extract_calls(source, value_node, node_id, file_path, edges)
+            return
+
+        # Also check for arrow function inside call_expression (HOF pattern)
+        if value_node is not None and value_node.type == "call_expression":
+            args = value_node.child_by_field_name("arguments")
+            if args:
+                for arg in args.children:
+                    if arg.type in ("arrow_function", "function_expression"):
+                        node_id = self._node_id(file_path, start_line, end_line)
+                        signature = self._build_ts_signature(source, name, arg)
+                        docstring = self._extract_ts_docstring(source, arg)
+                        qualified = self._build_qualified_name(file_path, name, parent_id, nodes)
+                        method_node = Node(
+                            id=node_id,
+                            kind=NodeKind.METHOD,
+                            name=name,
+                            qualified_name=qualified,
+                            file_path=file_path,
+                            language=Language.TYPESCRIPT,
+                            start_line=start_line,
+                            end_line=end_line,
+                            parent_id=parent_id,
+                            signature=signature,
+                            docstring=docstring,
+                        )
+                        nodes.append(method_node)
+                        edges.append(
+                            Edge(
+                                id=self._edge_id(parent_id, node_id, EdgeKind.CONTAINS),
+                                source_id=parent_id,
+                                target_id=node_id,
+                                kind=EdgeKind.CONTAINS,
+                            )
+                        )
+                        self._extract_calls(source, arg, node_id, file_path, edges)
+                        return
+
+        # ALL other public_field_definition → METHOD
+        # All class fields counted as methods, not just arrow functions
         node_id = self._node_id(file_path, start_line, end_line)
         qualified = self._build_qualified_name(file_path, name, parent_id, nodes)
         field_node = Node(
             id=node_id,
-            kind=NodeKind.VARIABLE,
+            kind=NodeKind.METHOD,
             name=name,
             qualified_name=qualified,
             file_path=file_path,
@@ -671,6 +842,48 @@ class TypeScriptExtractor:
                 # e.g., export default () => {} or export { named }
                 self._walk(source, child, file_path, parent_id, nodes, edges)
 
+    # ── Type reference extraction ─────────────────────────────────────────
+
+    def _extract_type_references(
+        self,
+        source: bytes,
+        node: Any,
+        parent_id: str,
+        file_path: Path,
+        edges: list[Edge],
+    ) -> None:
+        """Extract type references from type annotations within a function/method body.
+
+        Scans for type_identifier nodes in type annotations and adds REFERENCES edges.
+        """
+        # Scan children for type references
+        self._scan_type_refs(source, node, parent_id, file_path, edges)
+
+    def _scan_type_refs(
+        self,
+        source: bytes,
+        node: Any,
+        parent_id: str,
+        file_path: Path,
+        edges: list[Edge],
+    ) -> None:
+        """Recursively scan for type_identifier references."""
+        if node.type == "type_identifier":
+            type_name = source[node.start_byte : node.end_byte].decode()
+            if len(type_name) >= 2:
+                edges.append(
+                    Edge(
+                        id=self._edge_id(parent_id, f"unresolved:{type_name}", EdgeKind.REFERENCES),
+                        source_id=parent_id,
+                        target_id=f"unresolved:{type_name}",
+                        kind=EdgeKind.REFERENCES,
+                        confidence=0.4,
+                        line=node.start_point[0] + 1,
+                    )
+                )
+        for child in node.children:
+            self._scan_type_refs(source, child, parent_id, file_path, edges)
+
     # ── Call extraction ─────────────────────────────────────────────────
 
     def _extract_calls(
@@ -708,8 +921,57 @@ class TypeScriptExtractor:
                         line=node.start_point[0] + 1,
                     )
                 )
+        elif node.type == "new_expression":
+            # new Foo() → instantiates edge
+            type_node = node.child_by_field_name("type")
+            if type_node:
+                type_name = source[type_node.start_byte : type_node.end_byte].decode()
+                edges.append(
+                    Edge(
+                        id=self._edge_id(caller_id, f"unresolved:{type_name}", EdgeKind.INSTANTIATES),
+                        source_id=caller_id,
+                        target_id=f"unresolved:{type_name}",
+                        kind=EdgeKind.INSTANTIATES,
+                        confidence=0.5,
+                        line=node.start_point[0] + 1,
+                    )
+                )
         for child in node.children:
             self._find_calls(source, child, caller_id, file_path, edges)
+
+    # ── Metadata helpers ──────────────────────────────────────────────────
+
+    def _has_modifier(self, source: bytes, node: Any, modifier: str) -> bool:
+        """Check if a node has a specific modifier (async, static, etc.)."""
+        for child in node.children:
+            if child.type == "accessibility_modifier":
+                text = source[child.start_byte : child.start_byte + 10].decode(errors="replace")
+                if modifier in text:
+                    return True
+            if child.type in ("async", "static", "abstract", "public", "private", "protected", "readonly"):
+                text = source[child.start_byte : child.end_byte].decode(errors="replace")
+                if text == modifier:
+                    return True
+        return False
+
+    def _is_exported(self, node: Any) -> bool:
+        """Check if a node is inside an export statement."""
+        parent = node.parent
+        while parent:
+            if parent.type == "export_statement":
+                return True
+            parent = parent.parent
+        return False
+
+    def _get_visibility(self, source: bytes, node: Any) -> str:
+        """Get the visibility of a TS node (public, private, protected)."""
+        for child in node.children:
+            if child.type == "accessibility_modifier":
+                text = source[child.start_byte : child.end_byte].decode(errors="replace")
+                for vis in ("public", "private", "protected"):
+                    if text.startswith(vis):
+                        return vis
+        return "public"
 
     # ── Helpers ─────────────────────────────────────────────────────────
 

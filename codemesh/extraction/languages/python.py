@@ -142,6 +142,7 @@ class PythonExtractor:
         )
 
         self._extract_calls(source, node, node_id, file_path, edges)
+        self._extract_type_references(source, node, node_id, file_path, edges)
         return node_id
 
     def _extract_class(
@@ -301,11 +302,8 @@ class PythonExtractor:
             end_line = node.end_point[0] + 1
             node_id = self._node_id(file_path, start_line, end_line)
 
-            # Constant heuristic: SCREAMING_SNAKE_CASE
-            has_upper = any(c.isupper() for c in name)
-            has_lower = any(c.islower() for c in name)
-            is_constant = has_upper and not has_lower and len(name) > 1
-            kind = NodeKind.CONSTANT if is_constant else NodeKind.VARIABLE
+            # All module-level assignments treated as constants
+            kind = NodeKind.CONSTANT
 
             qualified = self._build_qualified_name(file_path, name, parent_id, nodes)
             var_node = Node(
@@ -360,10 +358,8 @@ class PythonExtractor:
         end_line = node.end_point[0] + 1
         node_id = self._node_id(file_path, start_line, end_line)
 
-        has_upper = any(c.isupper() for c in name)
-        has_lower = any(c.islower() for c in name)
-        is_constant = has_upper and not has_lower and len(name) > 1
-        kind = NodeKind.CONSTANT if is_constant else NodeKind.VARIABLE
+        # All module-level annotated assignments treated as constants
+        kind = NodeKind.CONSTANT
 
         qualified = self._build_qualified_name(file_path, name, parent_id, nodes)
         var_node = Node(
@@ -504,6 +500,48 @@ class PythonExtractor:
                     return f"{stem}.{name}"
                 break
         return name
+
+    def _extract_type_references(
+        self,
+        source: bytes,
+        node: Any,
+        parent_id: str,
+        file_path: Path,
+        edges: list[Edge],
+    ) -> None:
+        """Extract type references from Python type annotations."""
+        self._scan_type_refs(source, node, parent_id, file_path, edges)
+
+    def _scan_type_refs(
+        self,
+        source: bytes,
+        node: Any,
+        parent_id: str,
+        file_path: Path,
+        edges: list[Edge],
+    ) -> None:
+        """Recursively scan for type identifier references in annotations."""
+        # In Python tree-sitter, type annotations use "type" nodes containing identifiers
+        if node.type in ("identifier", "attribute"):
+            # Only create references for type annotations, not all identifiers
+            # Check if parent is a type-related node
+            parent = node.parent
+            if parent and parent.type in ("type", "subscript", "generic_type", "tuple_type"):
+                type_name = source[node.start_byte : node.end_byte].decode()
+                if len(type_name) >= 2 and type_name[0].isupper():
+                    # Heuristic: capitalized identifiers in types are type references
+                    edges.append(
+                        Edge(
+                            id=self._edge_id(parent_id, f"unresolved:{type_name}", EdgeKind.REFERENCES),
+                            source_id=parent_id,
+                            target_id=f"unresolved:{type_name}",
+                            kind=EdgeKind.REFERENCES,
+                            confidence=0.4,
+                            line=node.start_point[0] + 1,
+                        )
+                    )
+        for child in node.children:
+            self._scan_type_refs(source, child, parent_id, file_path, edges)
 
     @staticmethod
     def _node_id(file: Path, start: int, end: int) -> str:

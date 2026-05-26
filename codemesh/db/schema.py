@@ -24,6 +24,10 @@ CREATE TABLE IF NOT EXISTS nodes (
     visibility TEXT DEFAULT 'public',
     parent_id TEXT,
     metadata TEXT DEFAULT '{}',
+    is_exported INTEGER DEFAULT 0,
+    is_async INTEGER DEFAULT 0,
+    is_static INTEGER DEFAULT 0,
+    is_abstract INTEGER DEFAULT 0,
     created_at INTEGER DEFAULT (unixepoch())
 );
 

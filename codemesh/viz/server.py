@@ -12,7 +12,6 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 from codemesh.db.connection import create_connection, get_db_path
 from codemesh.db.queries import count_edges, count_nodes, get_node, search_nodes_fts
-from codemesh.viz.embedding_projector import get_embedding_stats, project_embeddings
 from codemesh.viz.graph_builder import build_graph
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -105,17 +104,6 @@ def create_app(root: Path) -> FastAPI:
             )
         finally:
             conn.close()
-
-    @app.get("/api/embeddings")
-    async def get_embeddings(
-        dims: Annotated[int, Query()] = 2,
-    ):
-        points = project_embeddings(root, n_components=dims)
-        return JSONResponse(content=points)
-
-    @app.get("/api/embedding-stats")
-    async def embedding_stats():
-        return JSONResponse(content=get_embedding_stats(root))
 
     return app
 

@@ -1,9 +1,7 @@
 """Retrieval: BM25 keyword search + graph walk."""
 
-from codemesh.retrieval.classifier import (
-    GraphWalkRetriever,
-)
+from codemesh.graph.traverser import GraphTraverser
 
 __all__ = [
-    "GraphWalkRetriever",
+    "GraphTraverser",
 ]

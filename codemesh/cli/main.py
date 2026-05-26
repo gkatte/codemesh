@@ -52,7 +52,7 @@ def query(
     q: str = typer.Argument(..., help="Query string"),
     path: str = typer.Option(".", "--path", "-p", help="Path to the indexed codebase"),
     limit: int = typer.Option(10, "--limit", "-l", help="Max results"),
-    fmt: str = typer.Option("xml", "--format", "-f", help="Output format: xml or markdown"),
+    fmt: str = typer.Option("xml", "--format", "-f", help="Output format: xml, markdown, structured, or json"),
 ) -> None:
     """Query the indexed codebase."""
     from codemesh.querier import query_codebase
@@ -63,15 +63,162 @@ def query(
 
 
 @app.command()
+def callers(
+    symbol: str = typer.Argument(..., help="Symbol to find callers for"),
+    path: str = typer.Option(".", "--path", "-p", help="Path to the indexed codebase"),
+) -> None:
+    """Find all functions/methods that call a specific symbol."""
+    from codemesh.db.connection import get_connection, get_db_path
+    from codemesh.db.schema import init_db
+    from codemesh.graph.query_manager import QueryManager
+
+    root = Path(path).resolve()
+    init_db(get_db_path(root))
+    with get_connection(get_db_path(root)) as conn:
+        qm = QueryManager(conn)
+        callers = qm.find_callers(symbol)
+        if not callers:
+            typer.echo(f"No callers found for \"{symbol}\"")
+            return
+        typer.echo(f"Callers of \"{symbol}\" ({len(callers)}):")
+        typer.echo("")
+        for n in callers:
+            sig = f"  {n.qualified_name} ({n.kind.value}) - {n.file_path}:{n.start_line}"
+            typer.echo(sig)
+
+
+@app.command()
+def callees(
+    symbol: str = typer.Argument(..., help="Symbol to find callees for"),
+    path: str = typer.Option(".", "--path", "-p", help="Path to the indexed codebase"),
+) -> None:
+    """Find all functions/methods that a specific symbol calls."""
+    from codemesh.db.connection import get_connection, get_db_path
+    from codemesh.db.schema import init_db
+    from codemesh.graph.query_manager import QueryManager
+
+    root = Path(path).resolve()
+    init_db(get_db_path(root))
+    with get_connection(get_db_path(root)) as conn:
+        qm = QueryManager(conn)
+        callees = qm.find_callees(symbol)
+        if not callees:
+            typer.echo(f"No callees found for \"{symbol}\"")
+            return
+        typer.echo(f"Callees of \"{symbol}\" ({len(callees)}):")
+        typer.echo("")
+        for n in callees:
+            sig = f"  {n.qualified_name} ({n.kind.value}) - {n.file_path}:{n.start_line}"
+            typer.echo(sig)
+
+
+@app.command()
+def impact(
+    symbol: str = typer.Argument(..., help="Symbol to analyze impact for"),
+    path: str = typer.Option(".", "--path", "-p", help="Path to the indexed codebase"),
+    depth: int = typer.Option(3, "--depth", "-d", help="Max traversal depth"),
+) -> None:
+    """Analyze what code is affected by changing a symbol."""
+    from codemesh.db.connection import get_connection, get_db_path
+    from codemesh.db.queries import get_node
+    from codemesh.db.schema import init_db
+    from codemesh.graph.query_manager import QueryManager
+
+    root = Path(path).resolve()
+    init_db(get_db_path(root))
+    with get_connection(get_db_path(root)) as conn:
+        qm = QueryManager(conn)
+        subgraph = qm.what_breaks_if_changed(symbol)
+        affected = [
+            n for nid in subgraph.nodes
+            if (n := get_node(conn, nid)) is not None
+        ]
+        if not affected:
+            typer.echo(f"No dependents found for \"{symbol}\"")
+            return
+        typer.echo(f"Impact of changing \"{symbol}\" — {len(affected)} affected symbols:")
+        typer.echo("")
+        # Group by file
+        by_file: dict[str, list] = {}
+        for n in affected:
+            fp = str(n.file_path)
+            by_file.setdefault(fp, []).append(n)
+        for fp, nodes in sorted(by_file.items()):
+            typer.echo(fp)
+            for n in nodes:
+                typer.echo(f"  {n.kind.value:10s} {n.name}:{n.start_line}")
+            typer.echo("")
+
+
+@app.command()
 def context(
     symbol: str = typer.Argument(..., help="Symbol to get context for"),
     path: str = typer.Option(".", "--path", "-p", help="Path to the indexed codebase"),
     tokens: int = typer.Option(8000, "--tokens", "-t", help="Token budget"),
+    fmt: str = typer.Option("xml", "--format", "-f", help="Output format: xml, markdown, or structured"),
+    max_nodes: int = typer.Option(50, "--max-nodes", "-n", help="Max nodes to include"),
+    max_code: int = typer.Option(10, "--max-code", "-c", help="Max code blocks"),
+    no_code: bool = typer.Option(False, "--no-code", help="Exclude code blocks"),
 ) -> None:
-    """Get context for a symbol."""
+    """Get context for a symbol (or general task).
+
+    Builds structured context with Entry Points, Related Symbols, and Code.
+    Similar to a context command for code intelligence.
+    """
     from codemesh.querier import get_context
 
     root = Path(path).resolve()
+
+    # If format is structured, we need to handle it differently
+    if fmt == "structured":
+        import json as json_mod
+        from codemesh.context.builder import ContextBuilder, ContextOptions, ContextFormat
+        from codemesh.db.connection import get_connection, get_db_path
+        from codemesh.db.schema import init_db
+        from codemesh.db.queries import search_nodes_fts
+        from codemesh.graph.traverser import GraphTraverser
+        from codemesh.db.queries import get_node
+
+        init_db(get_db_path(root))
+        with get_connection(get_db_path(root)) as conn:
+            # Search for the symbol
+            results = search_nodes_fts(conn, symbol, limit=max_nodes)
+            if not results:
+                typer.echo(f"No results for: {symbol}")
+                return
+
+            # Separate entry points (top results) from related (graph expansion)
+            traverser = GraphTraverser()
+            bm25_ids = {n.id for n, _ in results[:10]}
+            expanded = list(results[:10])
+
+            for node, score in results[:5]:
+                subgraph = traverser.traverse(conn, [node.id], max_depth=1, max_nodes=20)
+                for nid, tr in subgraph.nodes.items():
+                    if nid not in bm25_ids and len(expanded) < max_nodes:
+                        bm25_ids.add(nid)
+                        n = get_node(conn, nid)
+                        if n is not None:
+                            expanded.append((n, tr.score))
+
+            entry_points = expanded[:5]
+            related = expanded[5:max_nodes]
+
+            builder = ContextBuilder(conn, root)
+            context = builder.build(
+                expanded[:max_code] if not no_code else [],
+                symbol,
+                ContextOptions(
+                    max_snippets=max_code if not no_code else 0,
+                    max_tokens=tokens * 4,
+                    format=ContextFormat.STRUCTURED,
+                ),
+                entry_points=entry_points,
+                related=related,
+            )
+            typer.echo(context)
+        return
+
     result = get_context(root, symbol, max_tokens=tokens)
     typer.echo(result)
 
@@ -117,3 +264,82 @@ def graph(
     from codemesh.viz.server import run_server
 
     run_server(root=root, port=port, open_browser=True)
+
+
+@app.command()
+def files(
+    path: str = typer.Option(".", "--path", "-p", help="Path to the indexed codebase"),
+) -> None:
+    """Show project file structure from the index."""
+    from codemesh.db.connection import get_connection, get_db_path
+    from codemesh.db.schema import init_db
+
+    root = Path(path).resolve()
+    init_db(get_db_path(root))
+    with get_connection(get_db_path(root)) as conn:
+        # Get file nodes
+        file_rows = conn.execute(
+            "SELECT DISTINCT file_path, language FROM nodes WHERE kind = 'file' ORDER BY file_path"
+        ).fetchall()
+        if not file_rows:
+            typer.echo("No files indexed. Run 'codemesh index' first.")
+            return
+
+        # Count nodes per file
+        counts = conn.execute(
+            "SELECT file_path, kind, COUNT(*) as cnt FROM nodes GROUP BY file_path, kind ORDER BY file_path"
+        ).fetchall()
+
+        by_file: dict[str, dict[str, int]] = {}
+        for row in counts:
+            fp = row["file_path"]
+            by_file.setdefault(fp, {})[row["kind"]] = row["cnt"]
+
+        typer.echo(f"Indexed files: {len(file_rows)}")
+        typer.echo("")
+        for row in file_rows:
+            fp = row["file_path"]
+            lang = row["language"]
+            kinds = by_file.get(fp, {})
+            total = sum(kinds.values())
+            kind_str = ", ".join(f"{k}={v}" for k, v in sorted(kinds.items()) if k != "file")
+            typer.echo(f"  {fp} ({lang}, {total} nodes: {kind_str})")
+
+
+@app.command()
+def status(
+    path: str = typer.Option(".", "--path", "-p", help="Path to the indexed codebase"),
+) -> None:
+    """Show index status and statistics."""
+    from codemesh.db.connection import get_connection, get_db_path
+    from codemesh.db.schema import init_db
+
+    root = Path(path).resolve()
+    init_db(get_db_path(root))
+    with get_connection(get_db_path(root)) as conn:
+        node_count = conn.execute("SELECT COUNT(*) FROM nodes").fetchone()[0]
+        edge_count = conn.execute("SELECT COUNT(*) FROM edges").fetchone()[0]
+        file_count = conn.execute("SELECT COUNT(DISTINCT file_path) FROM nodes WHERE kind = 'file'").fetchone()[0]
+
+        # Node kinds breakdown
+        kinds = conn.execute(
+            "SELECT kind, COUNT(*) as cnt FROM nodes GROUP BY kind ORDER BY cnt DESC"
+        ).fetchall()
+
+        # Edge kinds breakdown
+        edge_kinds = conn.execute(
+            "SELECT kind, COUNT(*) as cnt FROM edges GROUP BY kind ORDER BY cnt DESC"
+        ).fetchall()
+
+        typer.echo(f"CodeMesh Index Status")
+        typer.echo(f"=" * 40)
+        typer.echo(f"  Files:    {file_count}")
+        typer.echo(f"  Nodes:    {node_count}")
+        typer.echo(f"  Edges:    {edge_count}")
+        typer.echo("")
+        typer.echo(f"  Node kinds:")
+        for row in kinds:
+            typer.echo(f"    {row['kind']:12s} {row['cnt']}")
+        typer.echo(f"  Edge kinds:")
+        for row in edge_kinds:
+            typer.echo(f"    {row['kind']:12s} {row['cnt']}")

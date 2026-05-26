@@ -26,8 +26,7 @@ def index_project(
     2. Insert into SQLite
     3. Resolve references
 
-    No embeddings — this is a pure BM25 keyword search index,
-    Pure BM25 keyword search index with graph walk expansion.
+    No embeddings — pure BM25 keyword search with graph walk expansion.
     """
     db_path = get_db_path(root)
     init_db(db_path)
@@ -41,6 +40,15 @@ def index_project(
     logger.info("Extraction: %d nodes, %d edges in %.2fs", len(nodes), len(edges), t1 - t0)
 
     with get_connection(db_path) as conn:
+        # Clear existing data before re-indexing
+        conn.execute("DELETE FROM nodes_fts")
+        conn.execute("DELETE FROM edges")
+        conn.execute("DELETE FROM nodes")
+        conn.commit()
+
+        # Rebuild FTS5 from empty (triggers will repopulate)
+        conn.execute("INSERT INTO nodes_fts(nodes_fts) VALUES('rebuild')")
+
         # Step 2: Insert nodes
         for node in nodes:
             insert_node(conn, node)

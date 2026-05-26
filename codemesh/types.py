@@ -94,6 +94,10 @@ class Node:
     visibility: str = "public"  # public, private, protected
     parent_id: str | None = None  # ID of parent node
     metadata: dict[str, str] = field(default_factory=dict)
+    is_exported: bool = False
+    is_async: bool = False
+    is_static: bool = False
+    is_abstract: bool = False
 
 
 @dataclass(frozen=True, slots=True)

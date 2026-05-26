@@ -26,6 +26,10 @@ def row_to_node(row: sqlite3.Row) -> Node:
         signature=row["signature"] or "",
         visibility=row["visibility"] or "public",
         parent_id=row["parent_id"],
+        is_exported=bool(row["is_exported"]) if "is_exported" in row.keys() else False,
+        is_async=bool(row["is_async"]) if "is_async" in row.keys() else False,
+        is_static=bool(row["is_static"]) if "is_static" in row.keys() else False,
+        is_abstract=bool(row["is_abstract"]) if "is_abstract" in row.keys() else False,
     )
 
 
@@ -126,8 +130,9 @@ def insert_node(conn: sqlite3.Connection, node: Node) -> None:
         INSERT OR REPLACE INTO nodes
             (id, kind, name, qualified_name, file_path, language,
              start_line, end_line, start_column, end_column,
-             docstring, signature, visibility, parent_id, metadata)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             docstring, signature, visibility, parent_id, metadata,
+             is_exported, is_async, is_static, is_abstract)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             node.id, node.kind.value, node.name, node.qualified_name,
@@ -136,6 +141,8 @@ def insert_node(conn: sqlite3.Connection, node: Node) -> None:
             node.start_column, node.end_column,
             node.docstring, node.signature, node.visibility,
             node.parent_id, "{}",
+            int(node.is_exported), int(node.is_async),
+            int(node.is_static), int(node.is_abstract),
         ),
     )
 
@@ -340,6 +347,15 @@ def _kind_bonus(kind: str) -> int:
     return bonuses.get(kind, 0)
 
 
+def _exported_bonus(node) -> int:
+    """Bonus for exported/public symbols."""
+    if hasattr(node, 'is_exported') and node.is_exported:
+        return 5
+    if hasattr(node, 'visibility') and node.visibility == 'private':
+        return -3
+    return 0
+
+
 def _name_match_bonus(node_name: str, query: str) -> int:
     """Bonus when a node's name matches the search query."""
     name_lower = node_name.lower()
@@ -476,6 +492,7 @@ def search_nodes_fts(conn: sqlite3.Connection, query: str,
                 score
                 + _kind_bonus(node.kind.value)
                 + _name_match_bonus(node.name, text)
+                + _exported_bonus(node)
             )
             scored.append((node, final_score))
         scored.sort(key=lambda x: x[1], reverse=True)
