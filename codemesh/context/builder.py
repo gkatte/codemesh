@@ -18,9 +18,10 @@ class ContextFormat(Enum):
 
 @dataclass
 class ContextOptions:
-    max_tokens: int = 8000
-    max_snippets: int = 20
-    context_margin: int = 3
+    max_tokens: int = 4000  # Tighter default — ~1000 tokens for focused context
+    max_snippets: int = 10  # Fewer, more relevant snippets
+    max_lines_per_snippet: int = 30  # Cap snippet size
+    context_margin: int = 2  # Smaller margin
     include_graph_summary: bool = True
     format: ContextFormat = ContextFormat.XML
 
@@ -108,6 +109,12 @@ class ContextBuilder:
                 lines = file_path.read_text(encoding="utf-8", errors="replace").splitlines()
                 start = max(0, node.start_line - 1 - options.context_margin)
                 end = min(len(lines), node.end_line + options.context_margin)
+                # Cap snippet size to prevent huge contexts
+                if end - start > options.max_lines_per_snippet:
+                    node_len = node.end_line - node.start_line + 1
+                    extra = options.max_lines_per_snippet - node_len
+                    start = max(0, node.start_line - 1 - extra // 2)
+                    end = min(len(lines), start + options.max_lines_per_snippet)
                 code_lines = lines[start:end]
                 code = "\n".join(
                     f"{start + i + 1:4d} | {line}" for i, line in enumerate(code_lines)

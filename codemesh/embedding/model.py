@@ -19,7 +19,13 @@ DEFAULT_RERANKER = "BAAI/bge-reranker-v2-m3"
 
 
 class EmbeddingModel:
-    """Loads and runs the sentence-transformers embedding model."""
+    """Loads and runs the sentence-transformers embedding model.
+
+    Uses a module-level cache to avoid reloading the model across multiple
+    instantiations within the same process.
+    """
+
+    _cache: dict[str, tuple[object, int]] = {}
 
     def __init__(self, model_name: str = DEFAULT_MODEL, device: str | None = None) -> None:
         self.model_name = model_name
@@ -36,12 +42,20 @@ class EmbeddingModel:
     def _load_model(self) -> None:
         if self._model is not None:
             return
+        # Check module-level cache first
+        cache_key = f"{self.model_name}:{self.device}"
+        if cache_key in EmbeddingModel._cache:
+            self._model, self._dimensions = EmbeddingModel._cache[cache_key]
+            logger.info("Embedding model loaded from cache: %s", self.model_name)
+            return
         logger.info("Loading embedding model: %s", self.model_name)
         from sentence_transformers import SentenceTransformer
 
         self._model = SentenceTransformer(self.model_name, device=self.device)
         test = self._model.encode(["test"], show_progress_bar=False)
         self._dimensions = test.shape[1]
+        # Store in cache
+        EmbeddingModel._cache[cache_key] = (self._model, self._dimensions)
         logger.info("Model loaded: %d dimensions", self._dimensions)
 
     def encode(self, texts: list[str], batch_size: int = 32) -> list[list[float]]:
@@ -263,13 +277,10 @@ class VectorStore:
 class CrossEncoderReranker:
     """Cross-encoder re-ranker for filtering noise from embedding search results.
 
-    Uses a cross-encoder model (e.g., BAAI/bge-reranker-v2-m3) to score
-    query-document pairs independently. This is more accurate than cosine
-    similarity alone because it models the full interaction between query
-    and document tokens.
-
-    Falls back gracefully if the model is not installed or fails to load.
+    Uses a module-level cache to avoid reloading across instantiations.
     """
+
+    _cache: dict[str, tuple[object, object]] = {}
 
     def __init__(self, model_name: str = DEFAULT_RERANKER, device: str | None = None) -> None:
         self.model_name = model_name
@@ -280,19 +291,25 @@ class CrossEncoderReranker:
     def _load_model(self) -> None:
         if self._model is not None:
             return
+        cache_key = f"{self.model_name}:{self.device}"
+        if cache_key in CrossEncoderReranker._cache:
+            self._model, self._tokenizer = CrossEncoderReranker._cache[cache_key]
+            logger.info("Re-ranker loaded from cache: %s", self.model_name)
+            return
         logger.info("Loading cross-encoder re-ranker: %s", self.model_name)
         try:
             from transformers import AutoModelForSequenceClassification, AutoTokenizer
-
             self._tokenizer = AutoTokenizer.from_pretrained(self.model_name)
             self._model = AutoModelForSequenceClassification.from_pretrained(self.model_name)
             if self.device:
                 self._model = self._model.to(self.device)
             self._model.eval()
+            CrossEncoderReranker._cache[cache_key] = (self._model, self._tokenizer)
             logger.info("Re-ranker loaded: %s", self.model_name)
         except Exception as e:
             logger.warning("Failed to load re-ranker %s: %s", self.model_name, e)
             self._model = None
+            self._tokenizer = None
 
     def rerank(
         self,
