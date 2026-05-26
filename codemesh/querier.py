@@ -293,7 +293,9 @@ def _rerank_results(
     node_map: dict[str, Node] = {}
     # Re-rank top N docs from fused list (more = exponentially slower on CPU)
     # With ONNX: 5 docs=0.15s, 10 docs=1.3s, 15 docs=2.8s
-    # Using 15 for better recall with jina-code embeddings
+    # Re-rank top N docs from fused list (more = exponentially slower on CPU/ONNX)
+    # With ONNX: 5 docs=0.15s, 10 docs=1.3s, 15 docs=2.8s
+    # Using 15 for better recall — total query time ~4.5s which is acceptable
     rerank_k = min(len(fused), 15)
     for node, _score in fused[:rerank_k]:
         text = _get_node_text(conn, root, node)
