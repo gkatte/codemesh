@@ -13,9 +13,10 @@ from codemesh.types import Node
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "BAAI/bge-base-en-v1.5"
+DEFAULT_MODEL = "jinaai/jina-embeddings-v2-base-code"
 DEFAULT_DIMENSIONS = 768
 DEFAULT_RERANKER = "BAAI/bge-reranker-v2-m3"
+DEFAULT_MODEL_TRUST_REMOTE = True  # jina models require trust_remote_code
 
 
 class EmbeddingModel:
@@ -51,7 +52,10 @@ class EmbeddingModel:
         logger.info("Loading embedding model: %s", self.model_name)
         from sentence_transformers import SentenceTransformer
 
-        self._model = SentenceTransformer(self.model_name, device=self.device)
+        kwargs: dict = {"device": self.device}
+        if DEFAULT_MODEL_TRUST_REMOTE:
+            kwargs["trust_remote_code"] = True
+        self._model = SentenceTransformer(self.model_name, **kwargs)
         test = self._model.encode(["test"], show_progress_bar=False)
         self._dimensions = test.shape[1]
         # Store in cache

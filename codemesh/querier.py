@@ -112,10 +112,11 @@ def query_codebase(
 
     with get_connection(db_path) as conn:
         # ── Structural retrieval: FTS5 + graph walk ──────────────────
-        structural_results = _structural_search(conn, query, top_k=limit * 3)
+        structural_results = _structural_search(conn, query, top_k=limit * 6)
 
         # ── Semantic retrieval: embedding similarity ─────────────────
-        semantic_results = _semantic_search(conn, query, top_k=limit * 3)
+        # Use a larger candidate pool so the reranker has more options
+        semantic_results = _semantic_search(conn, query, top_k=limit * 6)
 
         # ── Fuse via RRF ─────────────────────────────────────────────
         fused = reciprocal_rank_fusion(
@@ -290,8 +291,9 @@ def _rerank_results(
     # Try daemon first (fast path — models already loaded)
     documents: list[tuple[str, str]] = []
     node_map: dict[str, Node] = {}
-    # Only re-rank top N docs (more = exponentially slower on CPU)
-    rerank_k = min(len(fused), 5)
+    # Re-rank top N docs from fused list (more = exponentially slower on CPU)
+    # With ONNX: 5 docs=0.15s, 10 docs=1.3s, 15 docs=2.8s
+    rerank_k = min(len(fused), 10)
     for node, _score in fused[:rerank_k]:
         text = _get_node_text(conn, root, node)
         documents.append((node.id, text))
