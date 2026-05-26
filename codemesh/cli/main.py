@@ -9,7 +9,7 @@ import typer
 
 app = typer.Typer(
     name="codemesh",
-    help="Graph-enhanced retrieval-augmented generation for code",
+    help="BM25 keyword search + graph walk for code intelligence",
     no_args_is_help=True,
 )
 
@@ -18,9 +18,8 @@ app = typer.Typer(
 def index(
     path: str = typer.Argument(".", help="Path to the codebase to index"),
     workers: int | None = typer.Option(None, "--workers", "-w", help="Number of parallel workers"),
-    embed: bool = typer.Option(True, "--embed/--no-embed", help="Compute neural embeddings"),
 ) -> None:
-    """Index a codebase."""
+    """Index a codebase for BM25 search."""
     from codemesh.indexer import index_project
 
     root = Path(path).resolve()
@@ -29,11 +28,11 @@ def index(
         raise typer.Exit(1)
 
     typer.echo(f"Indexing {root}...")
-    stats = index_project(root, max_workers=workers, embed=embed)
-    parts = [f"{stats['nodes']} nodes", f"{stats['edges']} edges"]
-    if stats.get("embeddings", 0) > 0:
-        parts.append(f"{stats['embeddings']} embeddings")
-    typer.echo(f"Done! {', '.join(parts)} indexed in {stats.get('time_seconds', 0):.1f}s.")
+    stats = index_project(root, max_workers=workers)
+    typer.echo(
+        f"Done! {stats['nodes']} nodes, {stats['edges']} edges "
+        f"indexed in {stats.get('time_seconds', 0):.1f}s."
+    )
 
 
 @app.command()
@@ -86,40 +85,6 @@ def serve(
     from codemesh.mcp.server import run_server
 
     run_server(transport=transport, port=port)
-
-
-@app.command()
-def serve_embed(
-    foreground: bool = typer.Option(False, "--fg", help="Run in foreground (default: daemonize)"),
-) -> None:
-    """Start the embedding daemon for fast semantic search.
-
-    Keeps embedding + re-ranker models loaded in memory.
-    CLI queries automatically use the daemon when available.
-    Auto-shuts down after 5 minutes of idle time.
-    """
-    from codemesh.embedding.daemon import start_daemon, is_daemon_running
-
-    if is_daemon_running():
-        typer.echo("Embedding daemon is already running.")
-        raise typer.Exit(0)
-
-    if foreground:
-        typer.echo("Starting embedding daemon (foreground)...")
-        start_daemon()
-    else:
-        import os
-        import subprocess
-        import sys
-
-        typer.echo("Starting embedding daemon (background)...")
-        subprocess.Popen(
-            [sys.executable, "-m", "codemesh.embedding.daemon"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
-        typer.echo("Daemon started.")
 
 
 @app.command()

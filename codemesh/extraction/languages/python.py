@@ -60,12 +60,30 @@ class PythonExtractor:
             self._extract_function(source, node, file_path, parent_id, nodes, edges)
         elif kind == "class_definition":
             self._extract_class(source, node, file_path, parent_id, nodes, edges)
-        elif kind == "import_statement" or kind == "import_from_statement":
+        elif kind in ("import_statement", "import_from_statement"):
             self._extract_import(source, node, file_path, parent_id, nodes, edges)
         elif kind == "assignment":
             self._extract_assignment(source, node, file_path, parent_id, nodes, edges)
         elif kind == "annotated_assignment":
             self._extract_annotated_assignment(source, node, file_path, parent_id, nodes, edges)
+        elif kind == "decorated_definition":
+            # Handle decorated functions/classes: @decorator def foo(): ...
+            # Extract the inner definition
+            for child in node.children:
+                if child.type in ("function_definition", "class_definition"):
+                    self._walk(source, child, file_path, parent_id, nodes, edges)
+                    break
+            else:
+                for child in node.children:
+                    self._walk(source, child, file_path, parent_id, nodes, edges)
+        elif kind == "expression_statement":
+            # Check for module-level assignments wrapped in expression_statement
+            # This handles some edge cases in tree-sitter output
+            for child in node.children:
+                if child.type == "assignment":
+                    self._extract_assignment(source, child, file_path, parent_id, nodes, edges)
+                elif child.type == "annotated_assignment":
+                    self._extract_annotated_assignment(source, child, file_path, parent_id, nodes, edges)
         else:
             # Recurse into children
             for child in node.children:
@@ -90,18 +108,12 @@ class PythonExtractor:
         end_line = node.end_point[0] + 1
         node_id = self._node_id(file_path, start_line, end_line)
 
-        # Extract docstring
         docstring = self._extract_docstring(source, node)
-
-        # Extract signature
         params = node.child_by_field_name("parameters")
         return_type = node.child_by_field_name("return_type")
         signature = self._build_signature(source, name, params, return_type)
 
-        # Determine if method or function
         kind = NodeKind.METHOD if self._is_method(node) else NodeKind.FUNCTION
-
-        # Qualified name
         qualified = self._build_qualified_name(file_path, name, parent_id, nodes)
 
         func_node = Node(
@@ -120,8 +132,6 @@ class PythonExtractor:
             parent_id=parent_id,
         )
         nodes.append(func_node)
-
-        # Edge: parent contains function
         edges.append(
             Edge(
                 id=self._edge_id(parent_id, node_id, EdgeKind.CONTAINS),
@@ -131,9 +141,7 @@ class PythonExtractor:
             )
         )
 
-        # Extract calls within the function body
         self._extract_calls(source, node, node_id, file_path, edges)
-
         return node_id
 
     def _extract_class(
@@ -155,7 +163,6 @@ class PythonExtractor:
         end_line = node.end_point[0] + 1
         node_id = self._node_id(file_path, start_line, end_line)
 
-        # Extract superclasses
         superclasses = node.child_by_field_name("superclasses")
         bases: list[str] = []
         if superclasses:
@@ -192,9 +199,7 @@ class PythonExtractor:
             )
         )
 
-        # Extract extends edges
         for base_name in bases:
-            # Target will be resolved later by ReferenceResolver
             edges.append(
                 Edge(
                     id=self._edge_id(node_id, f"unresolved:{base_name}", EdgeKind.EXTENDS),
@@ -205,7 +210,6 @@ class PythonExtractor:
                 )
             )
 
-        # Walk class body for methods
         body = node.child_by_field_name("body")
         if body:
             for child in body.children:
@@ -271,8 +275,10 @@ class PythonExtractor:
     ) -> None:
         """Extract top-level assignments as constants or variables.
 
-        Heuristic: UPPER_CASE names → CONSTANT, others → VARIABLE.
-        Only extracts module-level assignments (parent is module).
+        Handles:
+        - Simple: FOO = 1, bar = 2
+        - Tuple unpacking: A, B = 1, 2 (extracts each name)
+        - Multiple targets: a = b = 1
         """
         # Only extract module-level assignments
         if node.parent and node.parent.type != "module":
@@ -282,51 +288,52 @@ class PythonExtractor:
         if lhs is None:
             return
 
-        # Handle simple name assignments (not tuple unpacking, not attributes)
-        if lhs.type != "identifier":
+        # Handle different LHS patterns
+        names = self._extract_assignment_names(source, lhs)
+        if not names:
             return
 
-        name = source[lhs.start_byte : lhs.end_byte].decode()
-        if name.startswith("_"):
-            return  # Skip private/placeholder names
+        for name, name_node in names:
+            if name.startswith("_"):
+                continue
 
-        start_line = node.start_point[0] + 1
-        end_line = node.end_point[0] + 1
-        node_id = self._node_id(file_path, start_line, end_line)
+            start_line = node.start_point[0] + 1
+            end_line = node.end_point[0] + 1
+            node_id = self._node_id(file_path, start_line, end_line)
 
-        # Heuristic for constant detection:
-        # - SCREAMING_SNAKE_CASE (all uppercase + underscores) → CONSTANT
-        # - MixedCase or lowercase → VARIABLE
-        has_upper = any(c.isupper() for c in name)
-        has_lower = any(c.islower() for c in name)
-        is_constant = has_upper and not has_lower and len(name) > 1
-        kind = NodeKind.CONSTANT if is_constant else NodeKind.VARIABLE
+            # Constant heuristic: SCREAMING_SNAKE_CASE
+            has_upper = any(c.isupper() for c in name)
+            has_lower = any(c.islower() for c in name)
+            is_constant = has_upper and not has_lower and len(name) > 1
+            kind = NodeKind.CONSTANT if is_constant else NodeKind.VARIABLE
 
-        qualified = self._build_qualified_name(file_path, name, parent_id, nodes)
-        var_node = Node(
-            id=node_id,
-            kind=kind,
-            name=name,
-            qualified_name=qualified,
-            file_path=file_path,
-            language=Language.PYTHON,
-            start_line=start_line,
-            end_line=end_line,
-            start_column=node.start_point[1],
-            end_column=node.end_point[1],
-            parent_id=parent_id,
-        )
-        nodes.append(var_node)
-        edges.append(
-            Edge(
-                id=self._edge_id(parent_id, node_id, EdgeKind.CONTAINS),
-                source_id=parent_id,
-                target_id=node_id,
-                kind=EdgeKind.CONTAINS,
+            qualified = self._build_qualified_name(file_path, name, parent_id, nodes)
+            var_node = Node(
+                id=node_id,
+                kind=kind,
+                name=name,
+                qualified_name=qualified,
+                file_path=file_path,
+                language=Language.PYTHON,
+                start_line=start_line,
+                end_line=end_line,
+                start_column=name_node.start_point[1],
+                end_column=name_node.end_point[1],
+                parent_id=parent_id,
             )
-        )
+            nodes.append(var_node)
+            edges.append(
+                Edge(
+                    id=self._edge_id(parent_id, node_id, EdgeKind.CONTAINS),
+                    source_id=parent_id,
+                    target_id=node_id,
+                    kind=EdgeKind.CONTAINS,
+                )
+            )
 
     def _extract_annotated_assignment(
+        self,
+        source: bytes,
         node: Any,
         file_path: Path,
         parent_id: str,
@@ -335,9 +342,7 @@ class PythonExtractor:
     ) -> None:
         """Extract type-annotated assignments like `MAX_SIZE: int = 100`.
 
-        These are common in Python for typed constants and module-level variables.
-        Only extracts module-level annotated assignments (parent is module).
-        Heuristic: name is UPPER_CASE → CONSTANT, else → VARIABLE.
+        Only extracts module-level annotated assignments.
         """
         # Only extract module-level
         if node.parent and node.parent.type != "module":
@@ -383,6 +388,33 @@ class PythonExtractor:
                 kind=EdgeKind.CONTAINS,
             )
         )
+
+    def _extract_assignment_names(
+        self, source: bytes, lhs: Any
+    ) -> list[tuple[str, Any]]:
+        """Extract variable names from assignment LHS.
+        Handles simple identifiers, tuple unpacking, and attribute assignments.
+        """
+        if lhs.type == "identifier":
+            name = source[lhs.start_byte : lhs.end_byte].decode()
+            return [(name, lhs)]
+        elif lhs.type == "tuple_pattern" or lhs.type == "tuple":
+            results = []
+            for child in lhs.children:
+                if child.type == "identifier":
+                    name = source[child.start_byte : child.end_byte].decode()
+                    results.append((name, child))
+                elif child.type == "tuple_pattern" or child.type == "tuple":
+                    results.extend(self._extract_assignment_names(source, child))
+            return results
+        elif lhs.type == "list_pattern":
+            results = []
+            for child in lhs.children:
+                if child.type == "identifier":
+                    name = source[child.start_byte : child.end_byte].decode()
+                    results.append((name, child))
+            return results
+        return []
 
     def _extract_calls(
         self,
@@ -437,7 +469,6 @@ class PythonExtractor:
                 and first.children[0].type == "string"
             ):
                 raw = source[first.children[0].start_byte : first.children[0].end_byte].decode()
-                # Strip quotes
                 return raw.strip("'\"").strip()
         return ""
 
@@ -464,7 +495,6 @@ class PythonExtractor:
         self, file_path: Path, name: str, parent_id: str, nodes: list[Node]
     ) -> str:
         """Build qualified name from parent chain."""
-        # Find parent node
         for n in nodes:
             if n.id == parent_id:
                 if n.kind == NodeKind.CLASS:

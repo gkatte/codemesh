@@ -102,6 +102,11 @@ class TypeScriptExtractor:
             # JS: function assigned to variable → treat as function
             # e.g., module.exports.foo = function() {}
             self._extract_assignment_pattern(source, node, file_path, parent_id, nodes, edges)
+        elif kind == "expression_statement":
+            # Handle expression statements that may contain assignments
+            for child in node.children:
+                if child.type == "assignment":
+                    self._extract_assignment_pattern(source, child, file_path, parent_id, nodes, edges)
         else:
             for child in node.children:
                 self._walk(source, child, file_path, parent_id, nodes, edges)
@@ -507,10 +512,13 @@ class TypeScriptExtractor:
         end_line = node.end_point[0] + 1
         node_id = self._node_id(file_path, start_line, end_line)
 
-        # Better constant heuristic: UPPER_CASE or const with primitive value
+        # Wider constant heuristic: UPPER_CASE or const with primitive/uppercase value
         has_upper = any(c.isupper() for c in name)
         has_lower = any(c.islower() for c in name)
-        is_constant = is_const and has_upper and not has_lower and len(name) > 1
+        # const with UPPER_CASE name, or const with a primitive value
+        is_constant = is_const and ((has_upper and not has_lower and len(name) > 1) or
+                                     (value_node is not None and value_node.type in
+                                      ("number", "string", "true", "false", "null")))
         kind = NodeKind.CONSTANT if is_constant else NodeKind.VARIABLE
         qualified = self._build_qualified_name(file_path, name, parent_id, nodes)
         var_node = Node(

@@ -121,7 +121,7 @@ def register_tools(server: Any, root: Path) -> None:
         return [
             Tool(
                 name="codemesh_search",
-                description="Search a codebase using hybrid structural+semantic retrieval",
+                description="Search a codebase using BM25 keyword search + graph walk",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -214,7 +214,6 @@ async def _tool_graph(arguments: dict, default_root: Path) -> list:
 
     from mcp.types import TextContent
 
-    from codemesh.viz.embedding_projector import get_embedding_stats
     from codemesh.viz.graph_builder import build_graph
 
     path = Path(arguments.get("path", str(default_root)))
@@ -224,13 +223,10 @@ async def _tool_graph(arguments: dict, default_root: Path) -> list:
 
     kind_filter = [kind] if kind else None
     g = build_graph(path, kind_filter=kind_filter, symbol_focus=symbol, depth=depth)
-    stats = get_embedding_stats(path)
 
     result = {
         "nodes": len(g["nodes"]),
         "edges": len(g["edges"]),
-        "embedded_nodes": stats["embedded_nodes"],
-        "embedding_model": stats["model"],
         "data": g,
     }
     return [TextContent(type="text", text=json.dumps(result, default=str))]

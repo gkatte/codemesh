@@ -79,18 +79,11 @@ def test_db(tmp_path):
     ]
 
     for node in nodes:
-        # Insert with embedding BLOB for some nodes
-        emb = None
-        if node.kind in (NodeKind.FUNCTION, NodeKind.CLASS):
-            import numpy as np
-
-            emb = np.random.randn(768).astype(np.float32).tobytes()
-
         conn.execute(
             """
             INSERT INTO nodes (id, kind, name, qualified_name, file_path, language,
-                start_line, end_line, docstring, signature, embedding, embedding_model)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                start_line, end_line, docstring, signature)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 node.id,
@@ -103,8 +96,6 @@ def test_db(tmp_path):
                 node.end_line,
                 node.docstring,
                 node.signature,
-                emb,
-                "test" if emb else "none",
             ),
         )
 

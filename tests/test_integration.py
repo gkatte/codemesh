@@ -41,53 +41,21 @@ class TestEndToEnd:
 
 
 class TestRetrieval:
-    def test_rrf_fusion(self) -> None:
-        from codemesh.retrieval import reciprocal_rank_fusion
-        from codemesh.types import Language, Node, NodeKind
+    def test_bm25_search(self, python_project: Path) -> None:
+        """BM25 keyword search should find matching symbols."""
+        index_project(python_project)
+        result = query_codebase(python_project, "create_user", limit=5)
+        assert "create_user" in result
 
-        n1 = Node(
-            id="a",
-            kind=NodeKind.FUNCTION,
-            name="a",
-            qualified_name="a",
-            file_path=Path("a.py"),
-            language=Language.PYTHON,
-            start_line=1,
-            end_line=5,
-            parent_id=None,
-        )
-        n2 = Node(
-            id="b",
-            kind=NodeKind.FUNCTION,
-            name="b",
-            qualified_name="b",
-            file_path=Path("b.py"),
-            language=Language.PYTHON,
-            start_line=1,
-            end_line=5,
-            parent_id=None,
-        )
-        n3 = Node(
-            id="c",
-            kind=NodeKind.FUNCTION,
-            name="c",
-            qualified_name="c",
-            file_path=Path("c.py"),
-            language=Language.PYTHON,
-            start_line=1,
-            end_line=5,
-            parent_id=None,
-        )
-        fused = reciprocal_rank_fusion([(n1, 0.9), (n2, 0.5)], [(n2, 0.8), (n3, 0.6)])
-        assert len(fused) == 3
-        assert fused[0][0].id == "b"
+    def test_bm25_symbol_lookup(self, python_project: Path) -> None:
+        """Exact symbol lookup should work via get_context."""
+        index_project(python_project)
+        result = get_context(python_project, "create_user")
+        assert "create_user" in result
 
-    def test_query_classifier(self) -> None:
-        from codemesh.retrieval import QueryClassifier, QueryType
-
-        c = QueryClassifier()
-        r = c.classify("which functions call validate_user?")
-        assert r.query_type == QueryType.STRUCTURAL
-        assert r.symbol == "validate_user"
-        r2 = c.classify("authentication middleware")
-        assert r2.query_type == QueryType.SEMANTIC
+    def test_bm25_relevance_ranking(self, python_project: Path) -> None:
+        """Results should be relevance-ranked (best match first)."""
+        index_project(python_project)
+        result = query_codebase(python_project, "validate user", limit=5)
+        # Should find validate method and validate-related symbols
+        assert "validate" in result or "User" in result

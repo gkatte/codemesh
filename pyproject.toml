@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "codemesh"
 version = "0.1.0"
-description = "Graph-enhanced retrieval-augmented generation for code"
+description = "BM25 keyword search and graph walk for code intelligence"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.12"
@@ -17,15 +17,10 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "tree-sitter>=0.23,<0.25",
-    "tree-sitter-python>=0.23",
+    "tree-sitter>=0.25",
+    "tree-sitter-python>=0.25",
     "tree-sitter-typescript>=0.23",
     "tree-sitter-rust>=0.23",
-    "sqlite-vec>=0.1",
-    "sentence-transformers>=3.2",
-    "torch>=2.5",
-    "transformers>=4.46",
-    "optimum[onnxruntime]>=1.22",
     "mcp>=1.1",
     "typer>=0.12",
     "watchdog>=6.0",

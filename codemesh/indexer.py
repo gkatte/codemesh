@@ -9,7 +9,6 @@ from pathlib import Path
 from codemesh.db.connection import get_connection, get_db_path
 from codemesh.db.queries import count_edges, count_nodes, insert_edge, insert_node
 from codemesh.db.schema import init_db
-from codemesh.embedding.model import BatchEmbedder, EmbeddingModel
 from codemesh.extraction.orchestrator import ExtractionOrchestrator
 from codemesh.resolution.resolver import ReferenceResolver
 
@@ -19,8 +18,6 @@ logger = logging.getLogger(__name__)
 def index_project(
     root: Path,
     max_workers: int | None = None,
-    embed: bool = False,
-    embedding_model: str | None = None,
 ) -> dict[str, int | float]:
     """Index an entire project. Returns dict with counts.
 
@@ -28,7 +25,9 @@ def index_project(
     1. Extract AST nodes/edges via tree-sitter
     2. Insert into SQLite
     3. Resolve references
-    4. Compute neural embeddings (optional, for semantic search)
+
+    No embeddings — this is a pure BM25 keyword search index,
+    Pure BM25 keyword search index with graph walk expansion.
     """
     db_path = get_db_path(root)
     init_db(db_path)
@@ -63,25 +62,14 @@ def index_project(
         node_count = count_nodes(conn)
         edge_count = count_edges(conn)
 
-        # Step 5: Compute embeddings
-        embedding_count = 0
-        if embed:
-            t5 = time.time()
-            model = EmbeddingModel(model_name=embedding_model) if embedding_model else EmbeddingModel()
-            embedder = BatchEmbedder(model=model, batch_size=64)
-            embedding_count = embedder.embed_nodes(conn, nodes, root, force=True)
-            t6 = time.time()
-            logger.info("Embeddings: %d vectors in %.2fs", embedding_count, t6 - t5)
-
     total_time = time.time() - t0
     logger.info(
-        "Indexed %d nodes, %d edges (%d embeddings) in %.2fs",
-        node_count, edge_count, embedding_count, total_time,
+        "Indexed %d nodes, %d edges in %.2fs",
+        node_count, edge_count, total_time,
     )
     return {
         "nodes": node_count,
         "edges": edge_count,
-        "embeddings": embedding_count,
         "time_seconds": round(total_time, 2),
     }
 
