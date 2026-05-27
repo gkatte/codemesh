@@ -504,3 +504,65 @@ def search_nodes_fts(conn: sqlite3.Connection, query: str,
         results = scored[:limit]
 
     return results
+
+
+# — Delta indexing helpers —
+
+def get_nodes_by_file(conn: sqlite3.Connection, file_path: str) -> list:
+    """Fetch all nodes for a given file path."""
+    rows = conn.execute(
+        "SELECT * FROM nodes WHERE file_path = ?", (file_path,)
+    ).fetchall()
+    return [row_to_node(r) for r in rows]
+
+
+def get_node_by_qualified_name(conn: sqlite3.Connection, qualified_name: str) -> Node | None:
+    """Fetch a node by qualified name."""
+    row = conn.execute(
+        "SELECT * FROM nodes WHERE qualified_name = ?", (qualified_name,)
+    ).fetchone()
+    return row_to_node(row) if row else None
+
+
+def delete_node_and_edges(conn: sqlite3.Connection, node_id: str) -> None:
+    """Delete a node and all edges touching it."""
+    conn.execute("DELETE FROM edges WHERE source_id = ? OR target_id = ?", (node_id, node_id))
+    conn.execute("DELETE FROM nodes WHERE id = ?", (node_id,))
+
+
+def delete_edges_by_source(conn: sqlite3.Connection, node_id: str) -> None:
+    """Delete all outgoing edges from a node."""
+    conn.execute("DELETE FROM edges WHERE source_id = ?", (node_id,))
+
+
+def get_incoming_edges_to_node(conn: sqlite3.Connection, node_id: str) -> list:
+    """Fetch all edges targeting a node."""
+    rows = conn.execute(
+        "SELECT * FROM edges WHERE target_id = ?", (node_id,)
+    ).fetchall()
+    return rows
+
+
+def insert_file_node_dep(conn: sqlite3.Connection, file_path: str, node_id: str) -> None:
+    """Insert a file-to-node dependency mapping."""
+    conn.execute(
+        "INSERT OR IGNORE INTO file_node_deps (file_path, node_id) VALUES (?, ?)",
+        (file_path, node_id),
+    )
+
+
+def get_files_referencing_node(conn: sqlite3.Connection, node_id: str) -> list[str]:
+    """Get file paths that reference a given node."""
+    rows = conn.execute(
+        "SELECT file_path FROM file_node_deps WHERE node_id = ?", (node_id,)
+    ).fetchall()
+    return [r[0] for r in rows]
+
+
+def count_ghost_edges(conn: sqlite3.Connection) -> int:
+    """Count edges whose target node no longer exists (integrity check)."""
+    row = conn.execute(
+        "SELECT COUNT(*) FROM edges"
+        " WHERE target_id NOT IN (SELECT id FROM nodes)"
+    ).fetchone()
+    return row[0] if row else 0
