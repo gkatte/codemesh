@@ -73,6 +73,12 @@ def index_project(
         t4 = time.time()
         logger.info("Resolution: %d/%d resolved in %.2fs", resolved, len(edges), t4 - t3)
 
+        # Step 5: Type inference for call edges
+        typed = resolver.resolve_call_types()
+        t5 = time.time()
+        logger.info("Type inference: %d/%d call edges enriched in %.2fs",
+                     typed, len(edges), t5 - t4)
+
         node_count = count_nodes(conn)
         edge_count = count_edges(conn)
 

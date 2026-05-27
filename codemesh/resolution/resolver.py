@@ -94,3 +94,118 @@ class ReferenceResolver:
                 return cid
 
         return candidates[0]
+
+    def resolve_call_types(self) -> int:
+        """Cross-file type inference pass for CALLS edges.
+
+        Populates resolved_target and type_context on CALLS edges using 3 strategies.
+        Only sets resolved_target when resolution is unambiguous.
+        """
+        from codemesh.db.queries import get_all_edges, get_all_nodes, get_node
+
+        # Pre-load all nodes into memory for fast lookup
+        all_nodes = get_all_nodes(self.conn)
+        by_id = {n.id: n for n in all_nodes}
+        by_name: dict[str, list] = {}
+        for n in all_nodes:
+            by_name.setdefault(n.name, []).append(n)
+
+        edges = get_all_edges(self.conn)
+        call_edges = [e for e in edges if e.kind == EdgeKind.CALLS
+                      and not e.target_id.startswith("unresolved:")]
+        updated = 0
+
+        for edge in call_edges:
+            source = by_id.get(edge.source_id)
+            target = by_id.get(edge.target_id)
+            if source is None or target is None:
+                continue
+
+            resolved_target = None
+            type_context = {}
+
+            # Strategy 1: receiver type from explicit annotation
+            receiver_type = self._infer_receiver_type_fast(edge.source_id, by_id)
+
+            # Strategy 2: receiver type from data_flow edges
+            if not receiver_type:
+                receiver_type = self._infer_type_from_dataflow_fast(edge.source_id, by_id)
+
+            # Strategy 3: import-based disambiguation
+            if not receiver_type:
+                imported = self._find_imported_symbol_fast(source, target.name, by_id)
+                if imported:
+                    resolved_target = imported
+                    type_context = {"source": "import"}
+
+            # If we have a receiver type, look for matching method
+            if receiver_type and not resolved_target:
+                candidates = [n for n in by_name.get(target.name, [])
+                              if n.kind.value in ("method", "function")
+                              and n.qualified_name.startswith(receiver_type + ".")]
+                if len(candidates) == 1:
+                    resolved_target = candidates[0].qualified_name
+                    type_context = {"receiver": receiver_type, "source": "type_annotation"}
+                elif len(candidates) > 1:
+                    type_context = {"receiver": receiver_type,
+                                    "ambiguous": [c.qualified_name for c in candidates],
+                                    "source": "type_annotation"}
+
+            if resolved_target or type_context:
+                import json
+                self.conn.execute(
+                    "UPDATE edges SET resolved_target=?, type_context=? WHERE id=?",
+                    (resolved_target or "", json.dumps(type_context) if type_context else "",
+                     edge.id),
+                )
+                updated += 1
+
+        self.conn.commit()
+        logger.info("Type resolution: updated %d/%d call edges", updated, len(call_edges))
+        return updated
+
+    def _infer_receiver_type_fast(self, node_id: str, by_id: dict) -> str | None:
+        """Strategy 1: infer receiver type from type annotations."""
+        import re
+        rows = self.conn.execute(
+            "SELECT * FROM edges WHERE target_id = ? AND kind = 'reads'",
+            (node_id,)
+        ).fetchall()
+        for row in rows:
+            src = by_id.get(row["source_id"])
+            if src and src.signature:
+                match = re.search(r":\s*([A-Z]\w+)", src.signature)
+                if match:
+                    return match.group(1)
+        return None
+
+    def _infer_type_from_dataflow_fast(self, node_id: str, by_id: dict) -> str | None:
+        """Strategy 2: infer receiver type from data_flow edges."""
+        import re
+        rows = self.conn.execute(
+            "SELECT * FROM edges WHERE target_id = ? AND kind IN ('data_flow', 'reads')",
+            (node_id,)
+        ).fetchall()
+        for row in rows:
+            src = by_id.get(row["source_id"])
+            if src and src.kind.value in ("variable", "parameter"):
+                if src.signature:
+                    match = re.search(r":\s*([A-Z]\w+)", src.signature)
+                    if match:
+                        return match.group(1)
+        return None
+
+    def _find_imported_symbol_fast(self, source_node, name: str, by_id: dict) -> str | None:
+        """Strategy 3: find symbol imported from exactly one module."""
+        rows = self.conn.execute(
+            """
+            SELECT n.qualified_name
+            FROM edges e
+            JOIN nodes n ON e.target_id = n.id
+            WHERE e.source_id = ? AND e.kind = 'imports' AND n.name = ?
+            """,
+            (source_node.id, name),
+        ).fetchall()
+        if len(rows) == 1:
+            return rows[0][0]
+        return None
