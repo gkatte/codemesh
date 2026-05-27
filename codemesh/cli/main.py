@@ -15,9 +15,110 @@ app = typer.Typer(
 
 
 @app.command()
+def init(
+    path: str = typer.Argument(".", help="Path to the project to initialize"),
+    interactive: bool = typer.Option(False, "-i", "--interactive", help="Interactive mode — prompts before overwriting files"),
+    index_project: bool = typer.Option(False, "--index", help="Also index the project after initialization"),
+) -> None:
+    """Initialize CodeMesh in a project.
+
+    Creates .codemesh/ directory and writes agent instruction files
+    (CLAUDE.md, .cursor/rules/codemesh.mdc, AGENTS.md).
+    """
+    from codemesh.cli.init import init_project
+
+    root = Path(path).resolve()
+    if not root.exists():
+        typer.echo(f"Error: {root} does not exist", err=True)
+        raise typer.Exit(1)
+
+    created = init_project(root, interactive=interactive)
+    typer.echo(f"CodeMesh initialized in {root}")
+    for key, val in created.items():
+        typer.echo(f"  {key}: {val}")
+
+    if index_project:
+        from codemesh.indexer import index_project as do_index
+        typer.echo(f"\nIndexing {root}...")
+        stats = do_index(root)
+        typer.echo(
+            f"Done! {stats['nodes']} nodes, {stats['edges']} edges "
+            f"indexed in {stats.get('time_seconds', 0):.1f}s."
+        )
+
+
+@app.command()
+def install(
+    target: str = typer.Option("auto", "--target", "-t", help="Agent(s) to configure: auto, all, claude, cursor, codex, or comma-separated list"),
+    global_config: bool = typer.Option(True, "--global/--local", help="Write global config (default) or project-local"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Non-interactive mode"),
+    path: str = typer.Option(".", "--path", "-p", help="Project path for local config"),
+) -> None:
+    """Install CodeMesh MCP server configuration for AI coding agents.
+
+    Auto-detects installed agents and writes MCP server config + permissions.
+    Supports Claude Code, Cursor, and Codex CLI.
+    """
+    from codemesh.cli.install_cmd import (
+        detect_agents,
+        install_claude,
+        install_codex,
+        install_cursor,
+    )
+
+    root = Path(path).resolve()
+    targets = target.lower().split(",") if target not in ("auto", "all") else [target]
+
+    if "auto" in targets:
+        detected = detect_agents()
+        if not detected:
+            typer.echo("No AI coding agents detected. Use --target to specify manually.")
+            raise typer.Exit(1)
+        targets = detected
+        if not yes:
+            typer.echo(f"Detected agents: {', '.join(targets)}")
+            typer.confirm("Configure these agents?", abort=True)
+
+    if "all" in targets:
+        targets = ["claude", "cursor", "codex"]
+
+    results = {}
+    for agent in targets:
+        agent = agent.strip()
+        if agent == "claude":
+            r = install_claude(root, global_config=global_config)
+            results["claude"] = r
+        elif agent == "cursor":
+            r = install_cursor(root)
+            results["cursor"] = r
+        elif agent == "codex":
+            r = install_codex(root)
+            results["codex"] = r
+        else:
+            typer.echo(f"Unknown agent: {agent}", err=True)
+
+    typer.echo("CodeMesh MCP server configured:")
+    for agent, r in results.items():
+        for key, val in r.items():
+            if val:
+                typer.echo(f"  {agent}/{key}: {val}")
+
+    # Also init the project if not already
+    codemesh_dir = root / ".codemesh"
+    if not codemesh_dir.exists():
+        from codemesh.cli.init import init_project
+        init_project(root)
+        typer.echo(f"\nInitialized .codemesh/ in {root}")
+
+    typer.echo("\nRestart your agent(s) for the MCP server to load.")
+
+
+@app.command()
 def index(
     path: str = typer.Argument(".", help="Path to the codebase to index"),
     workers: int | None = typer.Option(None, "--workers", "-w", help="Number of parallel workers"),
+    force: bool = typer.Option(False, "--force", "-f", help="Force re-index even if already indexed"),
+    quiet: bool = typer.Option(False, "--quiet", "-q", help="Minimal output"),
 ) -> None:
     """Index a codebase for BM25 search."""
     from codemesh.indexer import index_project
@@ -38,13 +139,18 @@ def index(
 @app.command()
 def sync(
     path: str = typer.Argument(".", help="Path to watch for changes"),
+    debounce: float = typer.Option(1.0, "--debounce", "-d", help="Debounce delay in seconds"),
 ) -> None:
-    """Watch for file changes and sync the index."""
+    """Watch for file changes and auto-sync the index.
+
+    Uses native OS file events (FSEvents/inotify) with debounced auto-sync.
+    The graph stays current as you code.
+    """
     from codemesh.indexer import sync_project
 
     root = Path(path).resolve()
     typer.echo(f"Watching {root} for changes... (Ctrl+C to stop)")
-    sync_project(root)
+    sync_project(root, debounce_delay=debounce)
 
 
 @app.command()
@@ -171,13 +277,11 @@ def context(
 
     # If format is structured, we need to handle it differently
     if fmt == "structured":
-        import json as json_mod
-        from codemesh.context.builder import ContextBuilder, ContextOptions, ContextFormat
+        from codemesh.context.builder import ContextBuilder, ContextFormat, ContextOptions
         from codemesh.db.connection import get_connection, get_db_path
+        from codemesh.db.queries import get_node, search_nodes_fts
         from codemesh.db.schema import init_db
-        from codemesh.db.queries import search_nodes_fts
         from codemesh.graph.traverser import GraphTraverser
-        from codemesh.db.queries import get_node
 
         init_db(get_db_path(root))
         with get_connection(get_db_path(root)) as conn:
@@ -192,7 +296,7 @@ def context(
             bm25_ids = {n.id for n, _ in results[:10]}
             expanded = list(results[:10])
 
-            for node, score in results[:5]:
+            for node, _score in results[:5]:
                 subgraph = traverser.traverse(conn, [node.id], max_depth=1, max_nodes=20)
                 for nid, tr in subgraph.nodes.items():
                     if nid not in bm25_ids and len(expanded) < max_nodes:
@@ -331,15 +435,15 @@ def status(
             "SELECT kind, COUNT(*) as cnt FROM edges GROUP BY kind ORDER BY cnt DESC"
         ).fetchall()
 
-        typer.echo(f"CodeMesh Index Status")
-        typer.echo(f"=" * 40)
+        typer.echo("CodeMesh Index Status")
+        typer.echo("=" * 40)
         typer.echo(f"  Files:    {file_count}")
         typer.echo(f"  Nodes:    {node_count}")
         typer.echo(f"  Edges:    {edge_count}")
         typer.echo("")
-        typer.echo(f"  Node kinds:")
+        typer.echo("  Node kinds:")
         for row in kinds:
             typer.echo(f"    {row['kind']:12s} {row['cnt']}")
-        typer.echo(f"  Edge kinds:")
+        typer.echo("  Edge kinds:")
         for row in edge_kinds:
             typer.echo(f"    {row['kind']:12s} {row['cnt']}")

@@ -189,7 +189,7 @@ def delta_index_file(root: Path, file_path: Path) -> dict[str, int]:
     return result
 
 
-def sync_project(root: Path) -> None:
+def sync_project(root: Path, debounce_delay: float = 1.0) -> None:
     """Start file watcher for a project."""
     db_path = get_db_path(root)
     init_db(db_path)
@@ -198,5 +198,5 @@ def sync_project(root: Path) -> None:
 
     from codemesh.sync.watcher import FileWatcher
 
-    with FileWatcher(root, db_path):
+    with FileWatcher(root, db_path, debounce_delay=debounce_delay):
         signal.pause()
