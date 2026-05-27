@@ -229,5 +229,5 @@ codemesh.egg-info/
 
 # Benchmark comparison files (internal use, not for publication)
 codemesh/benchmark/
-tests/test_benchmark_codegraph.py
+docs/docs/
 docs/
