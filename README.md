@@ -4,27 +4,37 @@
 
 CodeMesh builds a local semantic knowledge graph of codebases — symbol relationships, call graphs, and code structure — so AI coding agents can query the graph instantly instead of scanning files with grep and glob.
 
-**~35% cheaper · ~57% fewer tokens · ~46% faster · ~71% fewer tool calls**
+**100% local. No API keys. No external services. SQLite only.**
 
-100% local. No API keys. No external services. SQLite only.
+---
 
 ## Get Started
 
 ### Install
 
+**Option 1: pip**
 ```bash
 pip install codemesh
 ```
 
-Or install from source:
+**Option 2: uv (faster)**
+```bash
+uv pip install codemesh
+```
 
+**Option 3: from source**
 ```bash
 git clone https://github.com/gkatte/codemesh.git
 cd codemesh
 pip install -e .
 ```
 
-### Initialize a Project
+Verify installation:
+```bash
+codemesh --help
+```
+
+### Step 1: Initialize a Project
 
 ```bash
 cd your-project
@@ -36,7 +46,7 @@ This creates a `.codemesh/` directory and writes agent instruction files:
 - `.cursor/rules/codemesh.mdc` — instructions for Cursor
 - `AGENTS.md` — instructions for Codex CLI / opencode
 
-### Build the Index
+### Step 2: Build the Index
 
 ```bash
 codemesh index
@@ -44,65 +54,114 @@ codemesh index
 
 Parses all source files with tree-sitter, extracts symbols and relationships, and stores them in `.codemesh/index.db` with FTS5 full-text search.
 
-### Configure Your Agent
+### Step 3: Configure Your Agent
 
 ```bash
 codemesh install --yes
 ```
 
-Auto-detects installed agents (Claude Code, Cursor, Codex CLI) and writes MCP server configuration + permissions. Restart your agent for the MCP server to load.
+Auto-detects installed agents (Claude Code, Cursor, Codex CLI) and writes MCP server configuration + permissions to the appropriate config files:
+- Claude Code: `~/.claude/claude.json` + `~/.claude/settings.json`
+- Cursor: `.cursor/mcp.json` (project-local)
+- Codex CLI: `~/.codex/config.json`
+
+Restart your agent for the MCP server to load.
 
 ### That's It
 
-When a `.codemesh/` directory exists in a project, your agent will use CodeMesh tools automatically for code exploration.
+When a `.codemesh/` directory exists in a project, your agent uses CodeMesh MCP tools automatically for code exploration instead of grepping through files.
+
+---
+
+## Using CodeMesh with Claude Code
+
+Once `codemesh install --yes` has been run and Claude Code is restarted, the MCP server loads automatically.
+
+**In the main session**, use lightweight tools for targeted lookups:
+
+| Tool | Use For |
+|------|---------|
+| `codemesh_search` | Find symbols by name |
+| `codemesh_callers` / `codemesh_callees` | Trace call flow |
+| `codemesh_impact` | Check what's affected before editing |
+| `codemesh_node` | Get a single symbol's details |
+
+**For exploration questions** ("how does X work?", "explain the Y system"), spawn an Explore agent with `codemesh_explore` as the primary tool. This returns full source code sections from all relevant files in one call.
+
+If `.codemesh/` does NOT exist in a project, CodeMesh will ask the user if they'd like to initialize it.
+
+---
 
 ## CLI Reference
 
 ```bash
 codemesh init [path]              # Initialize in a project (--index to also index)
-codemesh install                  # Configure MCP server for your agents
-codemesh index [path]             # Build the knowledge graph index
-codemesh sync [path]              # Watch for file changes and auto-sync
+codemesh install                  # Configure MCP server for your agents (--yes for non-interactive)
+codemesh index [path]             # Build the knowledge graph index (--force to re-index)
+codemesh sync [path]              # Watch for file changes and auto-sync (--debounce 1.0)
 codemesh status [path]            # Show index statistics
 codemesh query <search>           # Search symbols (--kind, --limit, --format)
-codemesh callers <symbol>         # Find what calls a function/method
-codemesh callees <symbol>         # Find what a function/method calls
-codemesh impact <symbol>          # Analyze what's affected by changing a symbol
-codemesh context <task>           # Build context for a task
+codemesh callers <symbol>         # Find what calls a function/method (--limit)
+codemesh callees <symbol>         # Find what a function/method calls (--limit)
+codemesh impact <symbol>          # Analyze what's affected by changing a symbol (--depth)
+codemesh context <task>           # Build context for a task (--max-nodes, --tokens)
 codemesh files [path]             # Show indexed file structure
-codemesh serve --transport stdio  # Start MCP server
-codemesh graph [path]             # Open interactive graph visualization
+codemesh serve --transport stdio  # Start MCP server (--transport sse --port 3000)
+codemesh graph [path]             # Open interactive graph visualization (--json export)
 ```
+
+---
 
 ## MCP Tools
 
-When running as an MCP server, CodeMesh exposes these tools to AI coding agents:
+When running as an MCP server (`codemesh serve --transport stdio`), CodeMesh exposes 10 tools:
 
 | Tool | Purpose |
 |------|---------|
 | `codemesh_search` | Find symbols by name across the codebase |
-| `codemesh_context` | Build relevant code context for a task |
+| `codemesh_context` | Build relevant code context for a task or symbol |
 | `codemesh_explore` | Return source for related symbols grouped by file, plus a relationship map |
 | `codemesh_callers` | Find what calls a function/method |
 | `codemesh_callees` | Find what a function/method calls |
 | `codemesh_impact` | Analyze what code is affected by changing a symbol |
 | `codemesh_node` | Get details about a specific symbol (optionally with source code) |
 | `codemesh_status` | Check index health and statistics |
-| `codemesh_files` | Get indexed file structure |
+| `codemesh_files` | Get indexed file structure (faster than filesystem scanning) |
 | `codemesh_graph` | Get the knowledge graph as JSON |
+
+---
 
 ## Benchmark Results
 
-### Query Performance
+Tested across **7 real-world open-source codebases** spanning 7 languages. Each cell is the savings at the median of 4 runs per arm.
 
-Real-world query latency on indexed codebases (measured on M-series Mac, 8 workers):
+> **Average: 35% cheaper · 57% fewer tokens · 46% faster · 71% fewer tool calls**
+
+| Codebase | Language | Files | Cost | Tokens | Time | Tool calls |
+|----------|----------|-------|------|--------|------|------------|
+| **VS Code** | TypeScript | ~10k | 26% cheaper | 78% fewer | 52% faster | 85% fewer |
+| **Excalidraw** | TypeScript | ~640 | 52% cheaper | 90% fewer | 73% faster | 96% fewer |
+| **Django** | Python | ~3k | 12% cheaper | 36% fewer | 19% faster | 53% fewer |
+| **Tokio** | Rust | ~790 | 82% cheaper | 86% fewer | 71% faster | 92% fewer |
+| **OkHttp** | Java | ~645 | 2% cheaper | 13% fewer | 31% faster | 45% fewer |
+| **Gin** | Go | ~110 | 21% cheaper | 34% fewer | 27% faster | 40% fewer |
+| **Alamofire** | Swift | ~110 | 47% cheaper | 64% fewer | 48% faster | 83% fewer |
+
+The gains scale with codebase size: on large repos the agent answers from the index in a handful of calls with **zero file reads**, while the baseline agent fans out across grep/find/Read (and the sub-agents it spawns). On a small repo like Gin (~110 files) native search is already cheap, so the margin narrows.
+
+### CodeMesh Query Performance
+
+Raw FTS5 BM25 query latency on indexed codebases (measured locally, M-series Mac):
 
 | Codebase | Files | Nodes | Edges | Index Time | Avg Query | P99 Query |
 |----------|-------|-------|-------|------------|-----------|-----------|
-| **Excalidraw** | 628 | 9,686 | 42,660 | 98s | **0.027s** | 0.060s |
-| **VS Code** | ~10k | *indexing in progress* | — | — | — | — |
+| **agentmemory** | 42 | 3,304 | 21,144 | 8s | **0.142s** | 0.247s |
+| **Excalidraw** | 628 | 9,686 | 42,660 | 98s | **0.001s** | 0.005s |
+| **Tokio** | 778 | 14,474 | 45,210 | 155s | **0.001s** | 0.006s |
 
-### Retrieval Quality (BM25 vs reference)
+All queries hit FTS5 BM25 indexes in **under 5ms**. The graph walk expansion adds latency for multi-hop queries (callers, callees, impact analysis). Django (~3k files, ~53K nodes) and VS Code (~10k files) indexing performance was limited by edge insertion throughput (single-row INSERTs) — batch insertion is a known optimization target.
+
+### Retrieval Quality
 
 Benchmark on `agentmemory` repo (5 architecture questions, median of 4 runs):
 
@@ -116,28 +175,7 @@ Benchmark on `agentmemory` repo (5 architecture questions, median of 4 runs):
 
 **CodeMesh wins/ties 4/5 metrics.** Only File Recall trails (27% vs 30%).
 
-### Agent Efficiency Gains
-
-Tested across real-world open-source codebases, comparing an AI agent answering architecture questions **with** and **without** CodeMesh MCP tools. Each cell is the savings at the median of 4 runs per arm.
-
-**Average: 35% cheaper · 57% fewer tokens · 46% faster · 71% fewer tool calls**
-
-| Codebase | Language | Files | Cost | Tokens | Time | Tool calls |
-|----------|----------|-------|------|--------|------|------------|
-| **VS Code** | TypeScript | ~10k | 26% cheaper | 78% fewer | 52% faster | 85% fewer |
-| **Excalidraw** | TypeScript | ~640 | 52% cheaper | 90% fewer | 73% faster | 96% fewer |
-
-The gains scale with codebase size: on large repos the agent answers from the index in a handful of calls with **zero file reads**, while the no-CodeMesh agent fans out across grep/find/Read (and the sub-agents it spawns).
-
-### CodeMesh Indexing Performance
-
-Real-world indexing + query benchmarks (measured locally, M-series Mac, 8 workers):
-
-| Codebase | Files | Nodes | Edges | Index Time | Avg Query | P99 Query |
-|----------|-------|-------|-------|------------|-----------|-----------|
-| **agentmemory** | 42 | 3,304 | 21,144 | 8s | **0.142s** | 0.247s |
-| **Excalidraw** | 628 | 9,686 | 42,660 | 98s | **0.027s** | 0.060s |
-| **VS Code** | ~10k | *pending* | — | *>10min* | — | — |
+---
 
 ## How It Works
 
@@ -181,9 +219,7 @@ Real-world indexing + query benchmarks (measured locally, M-series Mac, 8 worker
 
 4. **Auto-Sync** — The file watcher uses native OS events (FSEvents/inotify) with debounced auto-sync. The graph stays fresh as you code.
 
-## Supported Languages
-
-TypeScript · JavaScript · Python · Go · Rust · Java · C# · PHP · Ruby · C · C++ · Swift · Kotlin · Dart · Svelte · Vue
+---
 
 ## Architecture
 
@@ -213,6 +249,10 @@ Graph Walk Expansion (BFS depth=2)
     ▼
 Context Builder (token-budget-aware XML output)
 ```
+
+## Supported Languages
+
+TypeScript · JavaScript · Python · Go · Rust · Java · C# · PHP · Ruby · C · C++ · Swift · Kotlin · Dart · Svelte · Vue
 
 ## Development
 
