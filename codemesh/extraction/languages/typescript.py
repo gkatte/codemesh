@@ -10,6 +10,7 @@ Handles:
 - object_method_definition (shorthand methods in object literals)
 - public_field_definition (class fields)
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -106,7 +107,9 @@ class TypeScriptExtractor:
             # Handle expression statements that may contain assignments
             for child in node.children:
                 if child.type == "assignment":
-                    self._extract_assignment_pattern(source, child, file_path, parent_id, nodes, edges)
+                    self._extract_assignment_pattern(
+                        source, child, file_path, parent_id, nodes, edges
+                    )
         else:
             for child in node.children:
                 self._walk(source, child, file_path, parent_id, nodes, edges)
@@ -171,6 +174,7 @@ class TypeScriptExtractor:
         )
         self._extract_calls(source, node, node_id, file_path, edges)
         self._extract_type_references(source, node, node_id, file_path, edges)
+        self._extract_data_flow(source, node, node_id, file_path, edges)
         return node_id
 
     def _extract_method(
@@ -216,10 +220,11 @@ class TypeScriptExtractor:
         )
         self._extract_calls(source, node, node_id, file_path, edges)
         self._extract_type_references(source, node, node_id, file_path, edges)
+        self._extract_data_flow(source, node, node_id, file_path, edges)
         return node_id
 
     _extract_function_signature = _extract_function  # same logic, TS overload
-    _extract_method_signature = _extract_method      # same logic, interface method sig
+    _extract_method_signature = _extract_method  # same logic, interface method sig
 
     # ── Class ───────────────────────────────────────────────────────────
 
@@ -884,6 +889,140 @@ class TypeScriptExtractor:
         for child in node.children:
             self._scan_type_refs(source, child, parent_id, file_path, edges)
 
+    # ── Data-flow extraction ──────────────────────────────────────────────
+
+    def _extract_data_flow(
+        self,
+        source: bytes,
+        func_node: Any,
+        func_id: str,
+        file_path: Path,
+        edges: list[Edge],
+    ) -> None:
+        """Extract lightweight data-flow edges within a function/method body."""
+        body = func_node.child_by_field_name("body")
+        if body is None:
+            return
+
+        writes: set[str] = set()
+        reads: set[str] = set()
+        self._collect_ts_data_flow(source, body, writes, reads)
+
+        _ts_skip = {
+            "this",
+            "self",
+            "true",
+            "false",
+            "null",
+            "undefined",
+            "console",
+            "Object",
+            "Array",
+            "String",
+            "Number",
+            "Boolean",
+            "Promise",
+            "Map",
+            "Set",
+            "Symbol",
+            "Error",
+            "RegExp",
+            "Date",
+            "JSON",
+            "Math",
+            "parseInt",
+            "parseFloat",
+            "isNaN",
+            "isFinite",
+            "require",
+            "module",
+            "exports",
+            "window",
+            "document",
+        }
+
+        for var_name in writes:
+            if var_name in _ts_skip or len(var_name) < 2:
+                continue
+            if var_name.startswith("_") and len(var_name) <= 2:
+                continue
+            edges.append(
+                Edge(
+                    id=self._edge_id(func_id, f"unresolved:{var_name}", EdgeKind.WRITES),
+                    source_id=func_id,
+                    target_id=f"unresolved:{var_name}",
+                    kind=EdgeKind.WRITES,
+                    confidence=0.4,
+                )
+            )
+
+        for var_name in reads:
+            if var_name in _ts_skip or len(var_name) < 2:
+                continue
+            if var_name in writes:
+                continue
+            edges.append(
+                Edge(
+                    id=self._edge_id(func_id, f"unresolved:{var_name}", EdgeKind.READS),
+                    source_id=func_id,
+                    target_id=f"unresolved:{var_name}",
+                    kind=EdgeKind.READS,
+                    confidence=0.3,
+                )
+            )
+
+    def _collect_ts_data_flow(
+        self,
+        source: bytes,
+        node: Any,
+        writes: set[str],
+        reads: set[str],
+    ) -> None:
+        """Recursively collect variable reads and writes from a TS subtree."""
+        kind = node.type
+
+        if kind == "assignment":
+            lhs = node.child_by_field_name("left")
+            rhs = node.child_by_field_name("right")
+            if lhs is not None:
+                for name in self._collect_ts_names(source, lhs):
+                    writes.add(name)
+            if rhs is not None:
+                self._collect_ts_data_flow(source, rhs, writes, reads)
+            return
+
+        if kind == "augmented_assignment":
+            lhs = node.child_by_field_name("left")
+            rhs = node.child_by_field_name("right")
+            if lhs is not None:
+                for name in self._collect_ts_names(source, lhs):
+                    writes.add(name)
+                    reads.add(name)
+            if rhs is not None:
+                self._collect_ts_data_flow(source, rhs, writes, reads)
+            return
+
+        if kind == "identifier":
+            name = source[node.start_byte : node.end_byte].decode()
+            reads.add(name)
+            return
+
+        for child in node.children:
+            self._collect_ts_data_flow(source, child, writes, reads)
+
+    def _collect_ts_names(self, source: bytes, node: Any) -> list[str]:
+        """Extract all identifier names from a TS AST subtree."""
+        names: list[str] = []
+        if node.type == "identifier":
+            names.append(source[node.start_byte : node.end_byte].decode())
+        elif node.type in ("array_pattern", "object_pattern"):
+            for child in node.children:
+                names.extend(self._collect_ts_names(source, child))
+        else:
+            for child in node.children:
+                names.extend(self._collect_ts_names(source, child))
+        return names
+
     # ── Call extraction ─────────────────────────────────────────────────
 
     def _extract_calls(
@@ -928,7 +1067,9 @@ class TypeScriptExtractor:
                 type_name = source[type_node.start_byte : type_node.end_byte].decode()
                 edges.append(
                     Edge(
-                        id=self._edge_id(caller_id, f"unresolved:{type_name}", EdgeKind.INSTANTIATES),
+                        id=self._edge_id(
+                            caller_id, f"unresolved:{type_name}", EdgeKind.INSTANTIATES
+                        ),
                         source_id=caller_id,
                         target_id=f"unresolved:{type_name}",
                         kind=EdgeKind.INSTANTIATES,
@@ -948,7 +1089,15 @@ class TypeScriptExtractor:
                 text = source[child.start_byte : child.start_byte + 10].decode(errors="replace")
                 if modifier in text:
                     return True
-            if child.type in ("async", "static", "abstract", "public", "private", "protected", "readonly"):
+            if child.type in (
+                "async",
+                "static",
+                "abstract",
+                "public",
+                "private",
+                "protected",
+                "readonly",
+            ):
                 text = source[child.start_byte : child.end_byte].decode(errors="replace")
                 if text == modifier:
                     return True

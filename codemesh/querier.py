@@ -74,12 +74,13 @@ def query_codebase(
         # _bm25_search returns (Node, score) tuples
         # We need to track which are seeds vs graph-expanded
         format_enum = ContextFormat.XML if fmt == "xml" else (
-            ContextFormat.STRUCTURED if fmt == "structured" else ContextFormat.MARKDOWN
+            ContextFormat.STRUCTURED if fmt == "structured" else (
+                ContextFormat.GRAPH if fmt == "graph" else ContextFormat.MARKDOWN
+            )
         )
         builder = ContextBuilder(conn, root)
 
-        if format_enum == ContextFormat.STRUCTURED:
-            # For structured format, pass entry_points and related separately
+        if format_enum in (ContextFormat.STRUCTURED, ContextFormat.GRAPH):
             entry_points = results[:5]
             related = results[5:] if len(results) > 5 else []
             return builder.build(

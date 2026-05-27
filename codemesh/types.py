@@ -49,6 +49,9 @@ class EdgeKind(enum.Enum):
     OVERRIDES = "overrides"  # Method override
     EXPORTS = "exports"  # Module export
     DECORATES = "decorates"  # Decorator application
+    DATA_FLOW = "data_flow"  # Value produced at A consumed at B
+    READS = "reads"  # A reads variable/property defined at B
+    WRITES = "writes"  # A assigns to variable/property defined at B
 
 
 class Language(enum.Enum):

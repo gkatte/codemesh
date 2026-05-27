@@ -12,8 +12,20 @@ from codemesh.types import Node
 
 # Node kinds that provide high information value
 _HIGH_VALUE_KINDS = {
-    "function", "method", "class", "interface", "type_alias", "struct", "trait",
-    "component", "route", "variable", "constant", "enum", "module", "namespace",
+    "function",
+    "method",
+    "class",
+    "interface",
+    "type_alias",
+    "struct",
+    "trait",
+    "component",
+    "route",
+    "variable",
+    "constant",
+    "enum",
+    "module",
+    "namespace",
 }
 
 
@@ -21,12 +33,13 @@ class ContextFormat(Enum):
     XML = "xml"
     MARKDOWN = "markdown"
     STRUCTURED = "structured"  # Entry Points + Related Symbols + Code
+    GRAPH = "graph"  # Graph-linearized: entry points ranked + call chains
 
 
 @dataclass
 class ContextOptions:
     max_tokens: int = 1200
-    max_snippets: int = 3   # Max 3 snippets
+    max_snippets: int = 3  # Max 3 snippets
     max_lines_per_snippet: int = 10  # Short snippets
     context_margin: int = 0
     max_per_file: int = 1
@@ -108,6 +121,8 @@ class ContextBuilder:
             return self._format_xml(selected, query)
         if options.format == ContextFormat.STRUCTURED:
             return self._format_structured(selected, query, entry_points, related)
+        if options.format == ContextFormat.GRAPH:
+            return self._format_graph(selected, query, entry_points, related)
         return self._format_markdown(selected, query)
 
     def _extract_snippets(
@@ -211,9 +226,13 @@ class ContextBuilder:
             lines.append("")
         return "\n".join(lines)
 
-    def _format_structured(self, snippets: list[Snippet], query: str,
-                           entry_points: list[tuple[Node, float]] | None = None,
-                           related: list[tuple[Node, float]] | None = None) -> str:
+    def _format_structured(
+        self,
+        snippets: list[Snippet],
+        query: str,
+        entry_points: list[tuple[Node, float]] | None = None,
+        related: list[tuple[Node, float]] | None = None,
+    ) -> str:
         """Structured output with entry points, related symbols, and code.
 
         Three sections:
@@ -232,7 +251,9 @@ class ContextBuilder:
                 vis = f" ({node.visibility})" if node.visibility != "public" else ""
                 async_tag = " (async)" if node.is_async else ""
                 exported_tag = " (exported)" if node.is_exported else ""
-                lines.append(f"- **{node.name}** ({node.kind.value}){vis}{async_tag}{exported_tag} - {node.file_path}:{node.start_line}")
+                lines.append(
+                    f"- **{node.name}** ({node.kind.value}){vis}{async_tag}{exported_tag} - {node.file_path}:{node.start_line}"
+                )
                 if sig:
                     lines.append(f"  `{sig[:120]}`")
                 if node.docstring:
@@ -269,3 +290,99 @@ class ContextBuilder:
                 lines.append("")
 
         return "\n".join(lines)
+
+    def _format_graph(
+        self,
+        snippets: list[Snippet],
+        query: str,
+        entry_points: list[tuple[Node, float]] | None = None,
+        related: list[tuple[Node, float]] | None = None,
+    ) -> str:
+        """Graph-linearized context: rank entry points by importance, show call chains."""
+        lines = ["## Graph Context", "", f"**Query:** {query}", ""]
+
+        ranked: list[tuple[Node, float]] = []
+        if entry_points:
+            for node, score in entry_points[:10]:
+                bonus = 0.0
+                if node.is_exported:
+                    bonus += 5.0
+                if node.kind.value in ("function", "method"):
+                    bonus += 3.0
+                elif node.kind.value in ("class", "interface"):
+                    bonus += 4.0
+                try:
+                    rows = self.conn.execute(
+                        "SELECT COUNT(*) FROM edges WHERE source_id = ? AND kind = 'calls'",
+                        (node.id,),
+                    ).fetchone()
+                    if rows:
+                        bonus += min(float(rows[0]) * 0.5, 10.0)
+                except Exception:
+                    pass
+                ranked.append((node, score + bonus))
+
+            ranked.sort(key=lambda x: x[1], reverse=True)
+
+            lines.append("### Entry Points (ranked)")
+            lines.append("")
+            for node, _rscore in ranked[:5]:
+                sig = node.signature or ""
+                tags: list[str] = []
+                if node.is_exported:
+                    tags.append("exported")
+                if node.is_async:
+                    tags.append("async")
+                tag_str = f" [{', '.join(tags)}]" if tags else ""
+                lines.append(
+                    f"- **{node.name}** ({node.kind.value}){tag_str}"
+                    f" - {node.file_path}:{node.start_line}"
+                )
+                if sig:
+                    lines.append(f"  `{sig[:120]}`")
+            lines.append("")
+
+        if ranked:
+            lines.append("### Call Chains")
+            lines.append("")
+            for node, _ in ranked[:3]:
+                callees = self._get_callees(node.id)
+                if callees:
+                    lines.append(f"**{node.name}** ->")
+                    for callee_name, callee_file in callees[:5]:
+                        lines.append(f"  - {callee_name} ({callee_file})")
+                    lines.append("")
+
+        if snippets:
+            lines.append("### Code")
+            lines.append("")
+            for s in snippets:
+                header = f"#### {s.file_path}:{s.start_line}-{s.end_line}"
+                if s.node_name:
+                    header += f" ({s.node_name})"
+                if s.source and s.source != "bm25":
+                    header += f" [{s.source}]"
+                lines.append(header)
+                lines.append("```")
+                lines.append(s.code)
+                lines.append("```")
+                lines.append("")
+
+        return "\n".join(lines)
+
+    def _get_callees(self, node_id: str) -> list[tuple[str, str]]:
+        """Get the names and files of nodes called by the given node."""
+        try:
+            rows = self.conn.execute(
+                """
+                SELECT n.name, n.file_path
+                FROM edges e
+                JOIN nodes n ON e.target_id = n.id
+                WHERE e.source_id = ? AND e.kind = 'calls'
+                LIMIT 10
+                """,
+                (node_id,),
+            ).fetchall()
+            return [(r[0], r[1]) for r in rows]
+        except Exception:
+            return []

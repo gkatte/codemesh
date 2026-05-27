@@ -83,7 +83,9 @@ class PythonExtractor:
                 if child.type == "assignment":
                     self._extract_assignment(source, child, file_path, parent_id, nodes, edges)
                 elif child.type == "annotated_assignment":
-                    self._extract_annotated_assignment(source, child, file_path, parent_id, nodes, edges)
+                    self._extract_annotated_assignment(
+                        source, child, file_path, parent_id, nodes, edges
+                    )
         else:
             # Recurse into children
             for child in node.children:
@@ -143,6 +145,7 @@ class PythonExtractor:
 
         self._extract_calls(source, node, node_id, file_path, edges)
         self._extract_type_references(source, node, node_id, file_path, edges)
+        self._extract_data_flow(source, node, node_id, file_path, edges)
         return node_id
 
     def _extract_class(
@@ -385,9 +388,7 @@ class PythonExtractor:
             )
         )
 
-    def _extract_assignment_names(
-        self, source: bytes, lhs: Any
-    ) -> list[tuple[str, Any]]:
+    def _extract_assignment_names(self, source: bytes, lhs: Any) -> list[tuple[str, Any]]:
         """Extract variable names from assignment LHS.
         Handles simple identifiers, tuple unpacking, and attribute assignments.
         """
@@ -512,6 +513,155 @@ class PythonExtractor:
         """Extract type references from Python type annotations."""
         self._scan_type_refs(source, node, parent_id, file_path, edges)
 
+    def _extract_data_flow(
+        self,
+        source: bytes,
+        func_node: Any,
+        func_id: str,
+        file_path: Path,
+        edges: list[Edge],
+    ) -> None:
+        """Extract lightweight data-flow edges within a function body.
+
+        Heuristic approach:
+        - Collect all assignment targets (LHS) within the function -> WRITES
+        - Collect all non-assignment identifier usages -> READS
+        - Deduplicate: each (func_id, var_name, kind) triple gets one edge.
+        """
+        body = func_node.child_by_field_name("body")
+        if body is None:
+            return
+
+        writes: set[str] = set()
+        reads: set[str] = set()
+        self._collect_data_flow(source, body, writes, reads)
+
+        _df_skip = {
+            "self",
+            "cls",
+            "True",
+            "False",
+            "None",
+            "print",
+            "len",
+            "range",
+            "int",
+            "str",
+            "float",
+            "bool",
+            "list",
+            "dict",
+            "set",
+            "tuple",
+            "type",
+            "isinstance",
+            "super",
+            "property",
+            "staticmethod",
+            "classmethod",
+            "enumerate",
+            "zip",
+            "map",
+            "filter",
+            "sorted",
+            "reversed",
+            "next",
+            "iter",
+            "hasattr",
+            "getattr",
+            "setattr",
+            "delattr",
+            "any",
+            "all",
+            "sum",
+            "min",
+            "max",
+            "abs",
+            "round",
+        }
+
+        for var_name in writes:
+            if var_name in _df_skip or len(var_name) < 2:
+                continue
+            if var_name.startswith("_") and len(var_name) <= 2:
+                continue
+            edges.append(
+                Edge(
+                    id=self._edge_id(func_id, f"unresolved:{var_name}", EdgeKind.WRITES),
+                    source_id=func_id,
+                    target_id=f"unresolved:{var_name}",
+                    kind=EdgeKind.WRITES,
+                    confidence=0.4,
+                )
+            )
+
+        for var_name in reads:
+            if var_name in _df_skip or len(var_name) < 2:
+                continue
+            if var_name in writes:
+                continue
+            edges.append(
+                Edge(
+                    id=self._edge_id(func_id, f"unresolved:{var_name}", EdgeKind.READS),
+                    source_id=func_id,
+                    target_id=f"unresolved:{var_name}",
+                    kind=EdgeKind.READS,
+                    confidence=0.3,
+                )
+            )
+
+    def _collect_data_flow(
+        self,
+        source: bytes,
+        node: Any,
+        writes: set[str],
+        reads: set[str],
+    ) -> None:
+        """Recursively collect variable reads and writes from a subtree."""
+        kind = node.type
+
+        if kind == "assignment":
+            lhs = node.child_by_field_name("left")
+            rhs = node.child_by_field_name("right")
+            if lhs is not None:
+                for name in self._collect_names_from(source, lhs):
+                    writes.add(name)
+            if rhs is not None:
+                self._collect_data_flow(source, rhs, writes, reads)
+            return
+
+        if kind == "augmented_assignment":
+            lhs = node.child_by_field_name("left")
+            rhs = node.child_by_field_name("right")
+            if lhs is not None:
+                for name in self._collect_names_from(source, lhs):
+                    writes.add(name)
+                    reads.add(name)
+            if rhs is not None:
+                self._collect_data_flow(source, rhs, writes, reads)
+            return
+
+        if kind == "identifier":
+            name = source[node.start_byte : node.end_byte].decode()
+            reads.add(name)
+            return
+
+        for child in node.children:
+            self._collect_data_flow(source, child, writes, reads)
+
+    def _collect_names_from(self, source: bytes, node: Any) -> list[str]:
+        """Extract all identifier names from an AST subtree."""
+        names: list[str] = []
+        if node.type == "identifier":
+            names.append(source[node.start_byte : node.end_byte].decode())
+        elif node.type in ("tuple_pattern", "tuple", "list_pattern"):
+            for child in node.children:
+                names.extend(self._collect_names_from(source, child))
+        else:
+            for child in node.children:
+                names.extend(self._collect_names_from(source, child))
+        return names
+
     def _scan_type_refs(
         self,
         source: bytes,
@@ -532,7 +682,9 @@ class PythonExtractor:
                     # Heuristic: capitalized identifiers in types are type references
                     edges.append(
                         Edge(
-                            id=self._edge_id(parent_id, f"unresolved:{type_name}", EdgeKind.REFERENCES),
+                            id=self._edge_id(
+                                parent_id, f"unresolved:{type_name}", EdgeKind.REFERENCES
+                            ),
                             source_id=parent_id,
                             target_id=f"unresolved:{type_name}",
                             kind=EdgeKind.REFERENCES,
