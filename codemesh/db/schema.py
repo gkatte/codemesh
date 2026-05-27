@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS nodes (
     is_async INTEGER DEFAULT 0,
     is_static INTEGER DEFAULT 0,
     is_abstract INTEGER DEFAULT 0,
+    content_hash TEXT DEFAULT '',
     created_at INTEGER DEFAULT (unixepoch())
 );
 
@@ -42,7 +43,16 @@ CREATE TABLE IF NOT EXISTS edges (
     line INTEGER DEFAULT 0,
     column INTEGER DEFAULT 0,
     metadata TEXT DEFAULT '{}',
+    resolved_target TEXT DEFAULT '',
+    type_context TEXT DEFAULT '',
     created_at INTEGER DEFAULT (unixepoch())
+);
+
+-- File-to-node dependency mapping for delta indexing
+CREATE TABLE IF NOT EXISTS file_node_deps (
+    file_path TEXT NOT NULL,
+    node_id TEXT NOT NULL,
+    PRIMARY KEY (file_path, node_id)
 );
 
 -- Full-text search virtual table (BM25 via FTS5)
@@ -77,6 +87,10 @@ CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id);
 CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id);
 CREATE INDEX IF NOT EXISTS idx_edges_kind ON edges(kind);
 CREATE INDEX IF NOT EXISTS idx_edges_confidence ON edges(confidence);
+CREATE INDEX IF NOT EXISTS idx_edges_dataflow ON edges(kind, source_id) WHERE kind IN ('data_flow', 'reads', 'writes');
+CREATE INDEX IF NOT EXISTS idx_edges_resolved ON edges(resolved_target) WHERE resolved_target != '';
+CREATE INDEX IF NOT EXISTS idx_nodes_content_hash ON nodes(content_hash) WHERE content_hash != '';
+CREATE INDEX IF NOT EXISTS idx_fnd_node ON file_node_deps(node_id);
 
 -- FTS5 triggers to keep index in sync
 CREATE TRIGGER IF NOT EXISTS nodes_ai AFTER INSERT ON nodes BEGIN

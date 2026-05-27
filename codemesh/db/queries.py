@@ -125,14 +125,15 @@ def count_edges(conn: sqlite3.Connection) -> int:
 
 def insert_node(conn: sqlite3.Connection, node: Node) -> None:
     """Insert or replace a node."""
+    content_hash = node.metadata.get("content_hash", "") if node.metadata else ""
     conn.execute(
         """
         INSERT OR REPLACE INTO nodes
             (id, kind, name, qualified_name, file_path, language,
              start_line, end_line, start_column, end_column,
              docstring, signature, visibility, parent_id, metadata,
-             is_exported, is_async, is_static, is_abstract)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             is_exported, is_async, is_static, is_abstract, content_hash)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             node.id, node.kind.value, node.name, node.qualified_name,
@@ -143,6 +144,7 @@ def insert_node(conn: sqlite3.Connection, node: Node) -> None:
             node.parent_id, "{}",
             int(node.is_exported), int(node.is_async),
             int(node.is_static), int(node.is_abstract),
+            content_hash,
         ),
     )
 
@@ -155,13 +157,16 @@ def insert_edge(conn: sqlite3.Connection, edge) -> None:
             """
             INSERT OR REPLACE INTO edges
                 (id, source_id, target_id, kind, confidence,
-                 weight_source, line, column, metadata)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 weight_source, line, column, metadata,
+                 resolved_target, type_context)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 edge.id, edge.source_id, edge.target_id, edge.kind.value,
                 edge.confidence, edge.weight_source, edge.line,
                 edge.column, "{}",
+                getattr(edge, "resolved_target", None) or "",
+                getattr(edge, "type_context", None) or "",
             ),
         )
     else:

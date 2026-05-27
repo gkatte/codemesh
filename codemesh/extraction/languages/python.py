@@ -109,6 +109,7 @@ class PythonExtractor:
         start_line = node.start_point[0] + 1
         end_line = node.end_point[0] + 1
         node_id = self._node_id(file_path, start_line, end_line)
+        content_hash = self._compute_content_hash(source, node)
 
         docstring = self._extract_docstring(source, node)
         params = node.child_by_field_name("parameters")
@@ -132,6 +133,7 @@ class PythonExtractor:
             docstring=docstring,
             signature=signature,
             parent_id=parent_id,
+            content_hash=content_hash,
         )
         nodes.append(func_node)
         edges.append(
@@ -166,6 +168,7 @@ class PythonExtractor:
         start_line = node.start_point[0] + 1
         end_line = node.end_point[0] + 1
         node_id = self._node_id(file_path, start_line, end_line)
+        content_hash = self._compute_content_hash(source, node)
 
         superclasses = node.child_by_field_name("superclasses")
         bases: list[str] = []
@@ -191,6 +194,7 @@ class PythonExtractor:
             docstring=docstring,
             parent_id=parent_id,
             metadata={"bases": ",".join(bases)},
+            content_hash=content_hash,
         )
         nodes.append(class_node)
 
@@ -304,6 +308,7 @@ class PythonExtractor:
             start_line = node.start_point[0] + 1
             end_line = node.end_point[0] + 1
             node_id = self._node_id(file_path, start_line, end_line)
+            content_hash = self._compute_content_hash(source, node)
 
             # All module-level assignments treated as constants
             kind = NodeKind.CONSTANT
@@ -321,6 +326,7 @@ class PythonExtractor:
                 start_column=name_node.start_point[1],
                 end_column=name_node.end_point[1],
                 parent_id=parent_id,
+                content_hash=content_hash,
             )
             nodes.append(var_node)
             edges.append(
@@ -704,3 +710,9 @@ class PythonExtractor:
     def _edge_id(source: str, target: str, kind: EdgeKind) -> str:
         raw = f"{source}:{target}:{kind.value}"
         return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+    @staticmethod
+    def _compute_content_hash(source: bytes, node: Any) -> str:
+        """Compute content hash from node source bytes (signature + body)."""
+        content = source[node.start_byte : node.end_byte].decode("utf-8", errors="replace")
+        return hashlib.sha256(content.encode()).hexdigest()[:16]

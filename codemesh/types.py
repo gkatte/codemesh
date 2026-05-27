@@ -101,6 +101,7 @@ class Node:
     is_async: bool = False
     is_static: bool = False
     is_abstract: bool = False
+    content_hash: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,6 +117,8 @@ class Edge:
     line: int = 0
     column: int = 0
     metadata: dict[str, str] = field(default_factory=dict)
+    resolved_target: str = ""
+    type_context: str = ""
 
 
 @dataclass(frozen=True, slots=True)
