@@ -8,7 +8,7 @@ from pathlib import Path
 
 from codemesh.context.builder import ContextBuilder, ContextFormat, ContextOptions
 from codemesh.db.connection import get_connection, get_db_path
-from codemesh.db.queries import get_all_nodes, get_node, search_nodes_fts
+from codemesh.db.queries import get_node, search_nodes_fts
 from codemesh.db.schema import init_db
 from codemesh.graph.traverser import GraphTraverser
 from codemesh.types import Node
@@ -19,15 +19,71 @@ logger = logging.getLogger(__name__)
 # ── Stop words for query term extraction ────────────────────────────────────
 
 _STOP_WORDS = {
-    "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for",
-    "of", "with", "by", "from", "is", "it", "that", "this", "are", "was",
-    "be", "has", "had", "have", "do", "does", "did", "will", "would", "could",
-    "should", "may", "might", "can", "shall", "not", "no",
-    "how", "what", "where", "when", "who", "which", "why",
-    "i", "me", "my", "we", "our", "you", "your", "he", "she", "they",
-    "show", "give", "tell",
-    "also", "into", "then", "than", "into",
-    "code", "file", "files",
+    "the",
+    "a",
+    "an",
+    "and",
+    "or",
+    "but",
+    "in",
+    "on",
+    "at",
+    "to",
+    "for",
+    "of",
+    "with",
+    "by",
+    "from",
+    "is",
+    "it",
+    "that",
+    "this",
+    "are",
+    "was",
+    "be",
+    "has",
+    "had",
+    "have",
+    "do",
+    "does",
+    "did",
+    "will",
+    "would",
+    "could",
+    "should",
+    "may",
+    "might",
+    "can",
+    "shall",
+    "not",
+    "no",
+    "how",
+    "what",
+    "where",
+    "when",
+    "who",
+    "which",
+    "why",
+    "i",
+    "me",
+    "my",
+    "we",
+    "our",
+    "you",
+    "your",
+    "he",
+    "she",
+    "they",
+    "show",
+    "give",
+    "tell",
+    "also",
+    "into",
+    "then",
+    "than",
+    "code",
+    "file",
+    "files",
 }
 
 
@@ -73,9 +129,13 @@ def query_codebase(
         # Separate BM25 seeds from graph-walk nodes
         # _bm25_search returns (Node, score) tuples
         # We need to track which are seeds vs graph-expanded
-        format_enum = ContextFormat.XML if fmt == "xml" else (
-            ContextFormat.STRUCTURED if fmt == "structured" else (
-                ContextFormat.GRAPH if fmt == "graph" else ContextFormat.MARKDOWN
+        format_enum = (
+            ContextFormat.XML
+            if fmt == "xml"
+            else (
+                ContextFormat.STRUCTURED
+                if fmt == "structured"
+                else (ContextFormat.GRAPH if fmt == "graph" else ContextFormat.MARKDOWN)
             )
         )
         builder = ContextBuilder(conn, root)
@@ -184,19 +244,17 @@ def _bm25_search(conn, query: str, top_k: int = 30) -> list[tuple[Node, float]]:
 def _try_symbol_lookup(conn, query: str) -> list[tuple[Node, float]] | None:
     """Try to find an exact symbol match. Returns None if not found."""
     # Try exact qualified name match
-    row = conn.execute(
-        "SELECT * FROM nodes WHERE qualified_name = ?", (query,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM nodes WHERE qualified_name = ?", (query,)).fetchone()
     if row:
         from codemesh.db.queries import row_to_node
+
         return [(row_to_node(row), 1.0)]
 
     # Try exact name match
-    row = conn.execute(
-        "SELECT * FROM nodes WHERE name = ? LIMIT 1", (query,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM nodes WHERE name = ? LIMIT 1", (query,)).fetchone()
     if row:
         from codemesh.db.queries import row_to_node
+
         return [(row_to_node(row), 0.9)]
 
     # Try case-insensitive name match
@@ -205,6 +263,7 @@ def _try_symbol_lookup(conn, query: str) -> list[tuple[Node, float]] | None:
     ).fetchone()
     if row:
         from codemesh.db.queries import row_to_node
+
         return [(row_to_node(row), 0.8)]
 
     return None

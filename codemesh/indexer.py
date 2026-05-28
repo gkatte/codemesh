@@ -60,13 +60,25 @@ def index_project(
         # Step 2: Batch insert nodes via executemany
         node_rows = [
             (
-                n.id, n.kind.value, n.name, n.qualified_name,
-                str(n.file_path), n.language.value,
-                n.start_line, n.end_line,
-                n.start_column, n.end_column,
-                n.docstring, n.signature, n.visibility, n.parent_id, "{}",
-                int(n.is_exported), int(n.is_async),
-                int(n.is_static), int(n.is_abstract),
+                n.id,
+                n.kind.value,
+                n.name,
+                n.qualified_name,
+                str(n.file_path),
+                n.language.value,
+                n.start_line,
+                n.end_line,
+                n.start_column,
+                n.end_column,
+                n.docstring,
+                n.signature,
+                n.visibility,
+                n.parent_id,
+                "{}",
+                int(n.is_exported),
+                int(n.is_async),
+                int(n.is_static),
+                int(n.is_abstract),
                 n.metadata.get("content_hash", "") if n.metadata else "",
             )
             for n in nodes
@@ -96,13 +108,21 @@ def index_project(
         seen_deps: set[tuple[str, str]] = set()
 
         for edge in edges:
-            edge_rows.append((
-                edge.id, edge.source_id, edge.target_id, edge.kind.value,
-                edge.confidence, edge.weight_source, edge.line,
-                edge.column, "{}",
-                getattr(edge, "resolved_target", None) or "",
-                getattr(edge, "type_context", None) or "",
-            ))
+            edge_rows.append(
+                (
+                    edge.id,
+                    edge.source_id,
+                    edge.target_id,
+                    edge.kind.value,
+                    edge.confidence,
+                    edge.weight_source,
+                    edge.line,
+                    edge.column,
+                    "{}",
+                    getattr(edge, "resolved_target", None) or "",
+                    getattr(edge, "type_context", None) or "",
+                )
+            )
             src_file = file_map.get(edge.source_id)
             tgt_file = file_map.get(edge.target_id)
             if src_file and tgt_file and src_file != tgt_file:
@@ -167,8 +187,9 @@ def index_project(
         # Step 8: Type inference for call edges
         typed = resolver.resolve_call_types()
         t5 = time.time()
-        logger.info("Type inference: %d/%d call edges enriched in %.2fs",
-                     typed, len(edges), t5 - t4)
+        logger.info(
+            "Type inference: %d/%d call edges enriched in %.2fs", typed, len(edges), t5 - t4
+        )
 
         node_count = count_nodes(conn)
         edge_count = count_edges(conn)
@@ -176,7 +197,9 @@ def index_project(
     total_time = time.time() - t0
     logger.info(
         "Indexed %d nodes, %d edges in %.2fs",
-        node_count, edge_count, total_time,
+        node_count,
+        edge_count,
+        total_time,
     )
     return {
         "nodes": node_count,
@@ -196,12 +219,8 @@ def delta_index_file(root: Path, file_path: Path) -> dict[str, int]:
         count_ghost_edges,
         delete_edges_by_source,
         delete_node_and_edges,
-        get_files_referencing_node,
-        get_incoming_edges_to_node,
         get_nodes_by_file,
-        insert_edge,
         insert_file_node_dep,
-        insert_node,
     )
     from codemesh.extraction.orchestrator import _parse_file
 
@@ -231,9 +250,7 @@ def delta_index_file(root: Path, file_path: Path) -> dict[str, int]:
         for name in deleted:
             node = old_by_name[name]
             delete_node_and_edges(conn, node.id)
-            conn.execute(
-                "DELETE FROM file_node_deps WHERE node_id = ?", (node.id,)
-            )
+            conn.execute("DELETE FROM file_node_deps WHERE node_id = ?", (node.id,))
             result["deleted"] += 1
 
         # 2. Insert new nodes
@@ -262,7 +279,7 @@ def delta_index_file(root: Path, file_path: Path) -> dict[str, int]:
 
         # 5. Re-extract edges for unmodified nodes that reference changed nodes
         #    (handles case where target of an edge was deleted and re-added)
-        for name in (old_names - affected):
+        for name in old_names - affected:
             node = old_by_name[name]
             for edge in new_edges:
                 if edge.source_id == node.id:
@@ -274,8 +291,11 @@ def delta_index_file(root: Path, file_path: Path) -> dict[str, int]:
 
     logger.info(
         "Delta index %s: -%d +%d ~%d nodes, %d ghost edges",
-        file_path, result["deleted"], result["added"],
-        result["modified"], result["ghost_edges"],
+        file_path,
+        result["deleted"],
+        result["added"],
+        result["modified"],
+        result["ghost_edges"],
     )
     return result
 

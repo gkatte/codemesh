@@ -148,6 +148,7 @@ def init_project(root: Path, interactive: bool = False) -> dict:
     config_file = codemesh_dir / "config.json"
     if not config_file.exists():
         import json
+
         config = {
             "version": 1,
             "root": str(root),
@@ -193,6 +194,7 @@ def uninit_project(root: Path, force: bool = False) -> dict:
     # Remove .codemesh directory
     if codemesh_dir.exists():
         import shutil
+
         if force or _confirm_remove(".codemesh/"):
             shutil.rmtree(codemesh_dir)
             removed.append(str(codemesh_dir))

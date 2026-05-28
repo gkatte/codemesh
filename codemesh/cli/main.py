@@ -17,8 +17,12 @@ app = typer.Typer(
 @app.command()
 def init(
     path: str = typer.Argument(".", help="Path to the project to initialize"),
-    interactive: bool = typer.Option(False, "-i", "--interactive", help="Interactive mode — prompts before overwriting files"),
-    index_project: bool = typer.Option(False, "--index", help="Also index the project after initialization"),
+    interactive: bool = typer.Option(
+        False, "-i", "--interactive", help="Interactive mode — prompts before overwriting files"
+    ),
+    index_project: bool = typer.Option(
+        False, "--index", help="Also index the project after initialization"
+    ),
 ) -> None:
     """Initialize CodeMesh in a project.
 
@@ -39,6 +43,7 @@ def init(
 
     if index_project:
         from codemesh.indexer import index_project as do_index
+
         typer.echo(f"\nIndexing {root}...")
         stats = do_index(root)
         typer.echo(
@@ -49,8 +54,15 @@ def init(
 
 @app.command()
 def install(
-    target: str = typer.Option("auto", "--target", "-t", help="Agent(s) to configure: auto, all, claude, cursor, codex, or comma-separated list"),
-    global_config: bool = typer.Option(True, "--global/--local", help="Write global config (default) or project-local"),
+    target: str = typer.Option(
+        "auto",
+        "--target",
+        "-t",
+        help="Agent(s) to configure: auto, all, claude, cursor, codex, or comma-separated list",
+    ),
+    global_config: bool = typer.Option(
+        True, "--global/--local", help="Write global config (default) or project-local"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Non-interactive mode"),
     path: str = typer.Option(".", "--path", "-p", help="Project path for local config"),
 ) -> None:
@@ -107,6 +119,7 @@ def install(
     codemesh_dir = root / ".codemesh"
     if not codemesh_dir.exists():
         from codemesh.cli.init import init_project
+
         init_project(root)
         typer.echo(f"\nInitialized .codemesh/ in {root}")
 
@@ -117,7 +130,9 @@ def install(
 def index(
     path: str = typer.Argument(".", help="Path to the codebase to index"),
     workers: int | None = typer.Option(None, "--workers", "-w", help="Number of parallel workers"),
-    force: bool = typer.Option(False, "--force", "-f", help="Force re-index even if already indexed"),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Force re-index even if already indexed"
+    ),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Minimal output"),
 ) -> None:
     """Index a codebase for BM25 search."""
@@ -158,7 +173,9 @@ def query(
     q: str = typer.Argument(..., help="Query string"),
     path: str = typer.Option(".", "--path", "-p", help="Path to the indexed codebase"),
     limit: int = typer.Option(10, "--limit", "-l", help="Max results"),
-    fmt: str = typer.Option("xml", "--format", "-f", help="Output format: xml, markdown, structured, or json"),
+    fmt: str = typer.Option(
+        "xml", "--format", "-f", help="Output format: xml, markdown, structured, or json"
+    ),
 ) -> None:
     """Query the indexed codebase."""
     from codemesh.querier import query_codebase
@@ -184,9 +201,9 @@ def callers(
         qm = QueryManager(conn)
         callers = qm.find_callers(symbol)
         if not callers:
-            typer.echo(f"No callers found for \"{symbol}\"")
+            typer.echo(f'No callers found for "{symbol}"')
             return
-        typer.echo(f"Callers of \"{symbol}\" ({len(callers)}):")
+        typer.echo(f'Callers of "{symbol}" ({len(callers)}):')
         typer.echo("")
         for n in callers:
             sig = f"  {n.qualified_name} ({n.kind.value}) - {n.file_path}:{n.start_line}"
@@ -209,9 +226,9 @@ def callees(
         qm = QueryManager(conn)
         callees = qm.find_callees(symbol)
         if not callees:
-            typer.echo(f"No callees found for \"{symbol}\"")
+            typer.echo(f'No callees found for "{symbol}"')
             return
-        typer.echo(f"Callees of \"{symbol}\" ({len(callees)}):")
+        typer.echo(f'Callees of "{symbol}" ({len(callees)}):')
         typer.echo("")
         for n in callees:
             sig = f"  {n.qualified_name} ({n.kind.value}) - {n.file_path}:{n.start_line}"
@@ -235,14 +252,11 @@ def impact(
     with get_connection(get_db_path(root)) as conn:
         qm = QueryManager(conn)
         subgraph = qm.what_breaks_if_changed(symbol)
-        affected = [
-            n for nid in subgraph.nodes
-            if (n := get_node(conn, nid)) is not None
-        ]
+        affected = [n for nid in subgraph.nodes if (n := get_node(conn, nid)) is not None]
         if not affected:
-            typer.echo(f"No dependents found for \"{symbol}\"")
+            typer.echo(f'No dependents found for "{symbol}"')
             return
-        typer.echo(f"Impact of changing \"{symbol}\" — {len(affected)} affected symbols:")
+        typer.echo(f'Impact of changing "{symbol}" — {len(affected)} affected symbols:')
         typer.echo("")
         # Group by file
         by_file: dict[str, list] = {}
@@ -261,7 +275,9 @@ def context(
     symbol: str = typer.Argument(..., help="Symbol to get context for"),
     path: str = typer.Option(".", "--path", "-p", help="Path to the indexed codebase"),
     tokens: int = typer.Option(8000, "--tokens", "-t", help="Token budget"),
-    fmt: str = typer.Option("xml", "--format", "-f", help="Output format: xml, markdown, or structured"),
+    fmt: str = typer.Option(
+        "xml", "--format", "-f", help="Output format: xml, markdown, or structured"
+    ),
     max_nodes: int = typer.Option(50, "--max-nodes", "-n", help="Max nodes to include"),
     max_code: int = typer.Option(10, "--max-code", "-c", help="Max code blocks"),
     no_code: bool = typer.Option(False, "--no-code", help="Exclude code blocks"),
@@ -423,7 +439,9 @@ def status(
     with get_connection(get_db_path(root)) as conn:
         node_count = conn.execute("SELECT COUNT(*) FROM nodes").fetchone()[0]
         edge_count = conn.execute("SELECT COUNT(*) FROM edges").fetchone()[0]
-        file_count = conn.execute("SELECT COUNT(DISTINCT file_path) FROM nodes WHERE kind = 'file'").fetchone()[0]
+        file_count = conn.execute(
+            "SELECT COUNT(DISTINCT file_path) FROM nodes WHERE kind = 'file'"
+        ).fetchone()[0]
 
         # Node kinds breakdown
         kinds = conn.execute(

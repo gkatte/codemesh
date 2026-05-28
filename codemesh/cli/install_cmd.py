@@ -201,6 +201,7 @@ def detect_agents() -> list[str]:
 
     # Check for Codex CLI
     import shutil
+
     if shutil.which("codex"):
         agents.append("codex")
 

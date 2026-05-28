@@ -52,7 +52,6 @@ class TestEmbeddingModelE2E:
     def test_semantic_similarity(self) -> None:
         """Similar code snippets should have higher similarity than dissimilar ones."""
         import numpy as np
-
         from codemesh.embedding.model import EmbeddingModel
 
         model = EmbeddingModel()
@@ -102,7 +101,6 @@ class TestEmbeddingModelE2E:
     def test_code_vs_text_differentiation(self) -> None:
         """Code and natural language should produce different embeddings."""
         import numpy as np
-
         from codemesh.embedding.model import EmbeddingModel
 
         model = EmbeddingModel()
@@ -199,8 +197,9 @@ class TestVectorStoreE2E:
     @pytest.mark.skipif(not _has_sentence_transformers(), reason=EMBEDDING_MODEL_REASON)
     def test_is_embedded_check(self, tmp_path: Path) -> None:
         """is_embedded should correctly report embedding status."""
-        from codemesh.db.queries import insert_node
         from codemesh.embedding.model import EmbeddingModel, VectorStore
+
+        from codemesh.db.queries import insert_node
 
         db_path = tmp_path / "test.db"
         init_db(db_path)

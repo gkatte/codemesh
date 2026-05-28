@@ -141,11 +141,7 @@ async def _tool_impact(arguments: dict, default_root: Path) -> list:
     with get_connection(get_db_path(path)) as conn:
         qm = QueryManager(conn)
         subgraph = qm.what_breaks_if_changed(symbol)
-        affected = [
-            n
-            for nid in subgraph.nodes
-            if (n := get_node(conn, nid)) is not None
-        ]
+        affected = [n for nid in subgraph.nodes if (n := get_node(conn, nid)) is not None]
         if not affected:
             return [TextContent(type="text", text=f"No dependents found for: {symbol}")]
         lines = [f"Impact of changing '{symbol}' — {len(affected)} affected symbols:", ""]
@@ -342,9 +338,7 @@ async def _tool_explore(arguments: dict, default_root: Path) -> list:
                         edge_key = f"{nid}->{tid}"
                         if edge_key not in seen_edges:
                             seen_edges.add(edge_key)
-                            rel_lines.append(
-                                f"  {node.name} --[{e['kind']}]--> {tnode.name}"
-                            )
+                            rel_lines.append(f"  {node.name} --[{e['kind']}]--> {tnode.name}")
 
         return [TextContent(type="text", text=context + "\n".join(rel_lines))]
 
@@ -384,10 +378,22 @@ def register_tools(server: Any, root: Path) -> None:
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "query": {"type": "string", "description": "Search query (e.g., 'auth', 'UserService', 'login flow')"},
-                        "path": {"type": "string", "default": str(root), "description": "Project root path"},
+                        "query": {
+                            "type": "string",
+                            "description": "Search query (e.g., 'auth', 'UserService', 'login flow')",
+                        },
+                        "path": {
+                            "type": "string",
+                            "default": str(root),
+                            "description": "Project root path",
+                        },
                         "limit": {"type": "integer", "default": 10, "description": "Max results"},
-                        "format": {"type": "string", "default": "xml", "enum": ["xml", "markdown", "structured"], "description": "Output format"},
+                        "format": {
+                            "type": "string",
+                            "default": "xml",
+                            "enum": ["xml", "markdown", "structured"],
+                            "description": "Output format",
+                        },
                     },
                     "required": ["query"],
                 },
@@ -398,11 +404,29 @@ def register_tools(server: Any, root: Path) -> None:
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "task": {"type": "string", "description": "Natural language task description (e.g., 'how does authentication work?')"},
-                        "symbol": {"type": "string", "description": "Symbol name to get context for"},
-                        "path": {"type": "string", "default": str(root), "description": "Project root path"},
-                        "max_nodes": {"type": "integer", "default": 50, "description": "Max nodes to include"},
-                        "include_code": {"type": "boolean", "default": True, "description": "Include source code snippets"},
+                        "task": {
+                            "type": "string",
+                            "description": "Natural language task description (e.g., 'how does authentication work?')",
+                        },
+                        "symbol": {
+                            "type": "string",
+                            "description": "Symbol name to get context for",
+                        },
+                        "path": {
+                            "type": "string",
+                            "default": str(root),
+                            "description": "Project root path",
+                        },
+                        "max_nodes": {
+                            "type": "integer",
+                            "default": 50,
+                            "description": "Max nodes to include",
+                        },
+                        "include_code": {
+                            "type": "boolean",
+                            "default": True,
+                            "description": "Include source code snippets",
+                        },
                     },
                     "required": [],
                 },
@@ -415,8 +439,16 @@ def register_tools(server: Any, root: Path) -> None:
                     "properties": {
                         "query": {"type": "string", "description": "Search query for exploration"},
                         "symbol": {"type": "string", "description": "Symbol name to explore"},
-                        "path": {"type": "string", "default": str(root), "description": "Project root path"},
-                        "max_nodes": {"type": "integer", "default": 30, "description": "Max symbols to return"},
+                        "path": {
+                            "type": "string",
+                            "default": str(root),
+                            "description": "Project root path",
+                        },
+                        "max_nodes": {
+                            "type": "integer",
+                            "default": 30,
+                            "description": "Max symbols to return",
+                        },
                     },
                     "required": [],
                 },
@@ -427,8 +459,15 @@ def register_tools(server: Any, root: Path) -> None:
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "symbol": {"type": "string", "description": "Symbol name to find callers for"},
-                        "path": {"type": "string", "default": str(root), "description": "Project root path"},
+                        "symbol": {
+                            "type": "string",
+                            "description": "Symbol name to find callers for",
+                        },
+                        "path": {
+                            "type": "string",
+                            "default": str(root),
+                            "description": "Project root path",
+                        },
                         "limit": {"type": "integer", "default": 20},
                     },
                     "required": ["symbol"],
@@ -440,8 +479,15 @@ def register_tools(server: Any, root: Path) -> None:
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "symbol": {"type": "string", "description": "Symbol name to find callees for"},
-                        "path": {"type": "string", "default": str(root), "description": "Project root path"},
+                        "symbol": {
+                            "type": "string",
+                            "description": "Symbol name to find callees for",
+                        },
+                        "path": {
+                            "type": "string",
+                            "default": str(root),
+                            "description": "Project root path",
+                        },
                         "limit": {"type": "integer", "default": 20},
                     },
                     "required": ["symbol"],
@@ -453,9 +499,20 @@ def register_tools(server: Any, root: Path) -> None:
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "symbol": {"type": "string", "description": "Symbol name to analyze impact for"},
-                        "path": {"type": "string", "default": str(root), "description": "Project root path"},
-                        "depth": {"type": "integer", "default": 3, "description": "Max traversal depth"},
+                        "symbol": {
+                            "type": "string",
+                            "description": "Symbol name to analyze impact for",
+                        },
+                        "path": {
+                            "type": "string",
+                            "default": str(root),
+                            "description": "Project root path",
+                        },
+                        "depth": {
+                            "type": "integer",
+                            "default": 3,
+                            "description": "Max traversal depth",
+                        },
                     },
                     "required": ["symbol"],
                 },
@@ -467,8 +524,16 @@ def register_tools(server: Any, root: Path) -> None:
                     "type": "object",
                     "properties": {
                         "symbol": {"type": "string", "description": "Symbol name to look up"},
-                        "path": {"type": "string", "default": str(root), "description": "Project root path"},
-                        "include_source": {"type": "boolean", "default": False, "description": "Include the full source code"},
+                        "path": {
+                            "type": "string",
+                            "default": str(root),
+                            "description": "Project root path",
+                        },
+                        "include_source": {
+                            "type": "boolean",
+                            "default": False,
+                            "description": "Include the full source code",
+                        },
                     },
                     "required": ["symbol"],
                 },
@@ -479,7 +544,11 @@ def register_tools(server: Any, root: Path) -> None:
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "path": {"type": "string", "default": str(root), "description": "Project root path"},
+                        "path": {
+                            "type": "string",
+                            "default": str(root),
+                            "description": "Project root path",
+                        },
                     },
                     "required": [],
                 },
@@ -490,7 +559,11 @@ def register_tools(server: Any, root: Path) -> None:
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "path": {"type": "string", "default": str(root), "description": "Project root path"},
+                        "path": {
+                            "type": "string",
+                            "default": str(root),
+                            "description": "Project root path",
+                        },
                     },
                     "required": [],
                 },
@@ -523,8 +596,10 @@ def register_tools(server: Any, root: Path) -> None:
                     return await _tool_graph(arguments, root)
                 case _:
                     from mcp.types import TextContent
+
                     return [TextContent(type="text", text=f"Unknown tool: {name}")]
         except Exception as e:
             logger.exception("Tool error")
             from mcp.types import TextContent
+
             return [TextContent(type="text", text=f"Error: {e}")]

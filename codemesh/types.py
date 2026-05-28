@@ -63,6 +63,7 @@ class Language(enum.Enum):
     RUST = "rust"
     GO = "go"
     JAVA = "java"
+    KOTLIN = "kotlin"
     CPP = "cpp"
     C = "c"
     RUBY = "ruby"

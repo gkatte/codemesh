@@ -80,7 +80,7 @@ class ReferenceResolver:
 
     def _build_lookup(self) -> None:
         """Build in-memory lookup maps for fast resolution."""
-        from codemesh.db.queries import get_all_nodes, get_all_edges
+        from codemesh.db.queries import get_all_edges, get_all_nodes
 
         self._by_name: dict[str, list[str]] = {}
         self._by_qualified: dict[str, str] = {}
@@ -158,8 +158,11 @@ class ReferenceResolver:
             by_name.setdefault(n.name, []).append(n)
 
         edges = get_all_edges(self.conn)
-        call_edges = [e for e in edges if e.kind == EdgeKind.CALLS
-                      and not e.target_id.startswith("unresolved:")]
+        call_edges = [
+            e
+            for e in edges
+            if e.kind == EdgeKind.CALLS and not e.target_id.startswith("unresolved:")
+        ]
 
         # Pre-compute edges-by-target and imports-by-source for O(1) lookups
         self._edges_by_target: dict[str, list] = {}
@@ -200,23 +203,30 @@ class ReferenceResolver:
 
             # If we have a receiver type, look for matching method
             if receiver_type and not resolved_target:
-                candidates = [n for n in by_name.get(target.name, [])
-                              if n.kind.value in ("method", "function")
-                              and n.qualified_name.startswith(receiver_type + ".")]
+                candidates = [
+                    n
+                    for n in by_name.get(target.name, [])
+                    if n.kind.value in ("method", "function")
+                    and n.qualified_name.startswith(receiver_type + ".")
+                ]
                 if len(candidates) == 1:
                     resolved_target = candidates[0].qualified_name
                     type_context = {"receiver": receiver_type, "source": "type_annotation"}
                 elif len(candidates) > 1:
-                    type_context = {"receiver": receiver_type,
-                                    "ambiguous": [c.qualified_name for c in candidates],
-                                    "source": "type_annotation"}
+                    type_context = {
+                        "receiver": receiver_type,
+                        "ambiguous": [c.qualified_name for c in candidates],
+                        "source": "type_annotation",
+                    }
 
             if resolved_target or type_context:
-                updates.append((
-                    resolved_target or "",
-                    json.dumps(type_context) if type_context else "",
-                    edge.id,
-                ))
+                updates.append(
+                    (
+                        resolved_target or "",
+                        json.dumps(type_context) if type_context else "",
+                        edge.id,
+                    )
+                )
                 updated += 1
 
         # Batch update all call edges

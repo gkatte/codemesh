@@ -246,7 +246,7 @@ class ContextBuilder:
         if entry_points:
             lines.append("### Entry Points")
             lines.append("")
-            for node, score in entry_points[:5]:
+            for node, _score in entry_points[:5]:
                 sig = node.signature or ""
                 vis = f" ({node.visibility})" if node.visibility != "public" else ""
                 async_tag = " (async)" if node.is_async else ""
@@ -265,7 +265,7 @@ class ContextBuilder:
             lines.append("### Related Symbols")
             lines.append("")
             seen_files: set[str] = set()
-            for node, score in related[:15]:
+            for node, _score in related[:15]:
                 file_key = f"{node.file_path}:{node.name}"
                 if file_key in seen_files:
                     continue

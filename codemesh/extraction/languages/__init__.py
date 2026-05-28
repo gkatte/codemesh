@@ -76,7 +76,9 @@ def _register_all() -> None:
     try:
         from codemesh.extraction.languages.java import JavaExtractor
 
-        register_extractor(Language.JAVA, JavaExtractor())
+        java_extractor = JavaExtractor()
+        register_extractor(Language.JAVA, java_extractor)
+        register_extractor(Language.KOTLIN, java_extractor)
     except ImportError:
         pass
 

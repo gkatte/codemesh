@@ -24,6 +24,8 @@ EXTENSION_MAP: dict[str, Language] = {
     ".rs": Language.RUST,
     ".go": Language.GO,
     ".java": Language.JAVA,
+    ".kt": Language.KOTLIN,
+    ".kts": Language.KOTLIN,
     ".cpp": Language.CPP,
     ".c": Language.C,
     ".h": Language.C,
@@ -164,6 +166,10 @@ def _make_parser(language: Language) -> tree_sitter.Parser | None:
             import tree_sitter_java
 
             lang = tree_sitter.Language(tree_sitter_java.language())
+        elif language == Language.KOTLIN:
+            import tree_sitter_kotlin
+
+            lang = tree_sitter.Language(tree_sitter_kotlin.language())
         elif language == Language.SWIFT:
             import tree_sitter_swift
 

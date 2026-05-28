@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import re
 import sqlite3
 from pathlib import Path
@@ -26,10 +27,10 @@ def row_to_node(row: sqlite3.Row) -> Node:
         signature=row["signature"] or "",
         visibility=row["visibility"] or "public",
         parent_id=row["parent_id"],
-        is_exported=bool(row["is_exported"]) if "is_exported" in row.keys() else False,
-        is_async=bool(row["is_async"]) if "is_async" in row.keys() else False,
-        is_static=bool(row["is_static"]) if "is_static" in row.keys() else False,
-        is_abstract=bool(row["is_abstract"]) if "is_abstract" in row.keys() else False,
+        is_exported=bool(row["is_exported"]) if "is_exported" in row else False,
+        is_async=bool(row["is_async"]) if "is_async" in row else False,
+        is_static=bool(row["is_static"]) if "is_static" in row else False,
+        is_abstract=bool(row["is_abstract"]) if "is_abstract" in row else False,
     )
 
 
@@ -54,60 +55,69 @@ def get_all_node_names(conn: sqlite3.Connection) -> list[str]:
 def get_all_edges(conn: sqlite3.Connection) -> list:
     """Fetch all edges."""
     from codemesh.types import Edge, EdgeKind
+
     rows = conn.execute("SELECT * FROM edges").fetchall()
     edges = []
     for r in rows:
-        try:
-            edges.append(Edge(
-                id=r["id"],
-                source_id=r["source_id"],
-                target_id=r["target_id"],
-                kind=EdgeKind(r["kind"]),
-                confidence=r["confidence"],
-                weight_source=r["weight_source"],
-                line=r["line"],
-                column=r["column"],
-            ))
-        except Exception:
-            pass
+        with contextlib.suppress(Exception):
+            edges.append(
+                Edge(
+                    id=r["id"],
+                    source_id=r["source_id"],
+                    target_id=r["target_id"],
+                    kind=EdgeKind(r["kind"]),
+                    confidence=r["confidence"],
+                    weight_source=r["weight_source"],
+                    line=r["line"],
+                    column=r["column"],
+                )
+            )
     return edges
 
 
 def get_edges_by_source(conn: sqlite3.Connection, source_id: str) -> list:
     """Fetch edges by source node ID."""
-    rows = conn.execute(
-        "SELECT * FROM edges WHERE source_id = ?", (source_id,)
-    ).fetchall()
+    rows = conn.execute("SELECT * FROM edges WHERE source_id = ?", (source_id,)).fetchall()
     from codemesh.types import Edge, EdgeKind
+
     edges = []
     for r in rows:
-        try:
-            edges.append(Edge(
-                id=r["id"], source_id=r["source_id"], target_id=r["target_id"],
-                kind=EdgeKind(r["kind"]), confidence=r["confidence"],
-                weight_source=r["weight_source"], line=r["line"], column=r["column"],
-            ))
-        except Exception:
-            pass
+        with contextlib.suppress(Exception):
+            edges.append(
+                Edge(
+                    id=r["id"],
+                    source_id=r["source_id"],
+                    target_id=r["target_id"],
+                    kind=EdgeKind(r["kind"]),
+                    confidence=r["confidence"],
+                    weight_source=r["weight_source"],
+                    line=r["line"],
+                    column=r["column"],
+                )
+            )
     return edges
 
 
 def get_edges_by_target(conn: sqlite3.Connection, target_id: str) -> list:
     """Fetch edges by target node ID."""
-    rows = conn.execute(
-        "SELECT * FROM edges WHERE target_id = ?", (target_id,)
-    ).fetchall()
+    rows = conn.execute("SELECT * FROM edges WHERE target_id = ?", (target_id,)).fetchall()
     from codemesh.types import Edge, EdgeKind
+
     edges = []
     for r in rows:
-        try:
-            edges.append(Edge(
-                id=r["id"], source_id=r["source_id"], target_id=r["target_id"],
-                kind=EdgeKind(r["kind"]), confidence=r["confidence"],
-                weight_source=r["weight_source"], line=r["line"], column=r["column"],
-            ))
-        except Exception:
-            pass
+        with contextlib.suppress(Exception):
+            edges.append(
+                Edge(
+                    id=r["id"],
+                    source_id=r["source_id"],
+                    target_id=r["target_id"],
+                    kind=EdgeKind(r["kind"]),
+                    confidence=r["confidence"],
+                    weight_source=r["weight_source"],
+                    line=r["line"],
+                    column=r["column"],
+                )
+            )
     return edges
 
 
@@ -136,14 +146,25 @@ def insert_node(conn: sqlite3.Connection, node: Node) -> None:
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
-            node.id, node.kind.value, node.name, node.qualified_name,
-            str(node.file_path), node.language.value,
-            node.start_line, node.end_line,
-            node.start_column, node.end_column,
-            node.docstring, node.signature, node.visibility,
-            node.parent_id, "{}",
-            int(node.is_exported), int(node.is_async),
-            int(node.is_static), int(node.is_abstract),
+            node.id,
+            node.kind.value,
+            node.name,
+            node.qualified_name,
+            str(node.file_path),
+            node.language.value,
+            node.start_line,
+            node.end_line,
+            node.start_column,
+            node.end_column,
+            node.docstring,
+            node.signature,
+            node.visibility,
+            node.parent_id,
+            "{}",
+            int(node.is_exported),
+            int(node.is_async),
+            int(node.is_static),
+            int(node.is_abstract),
             content_hash,
         ),
     )
@@ -152,6 +173,7 @@ def insert_node(conn: sqlite3.Connection, node: Node) -> None:
 def insert_edge(conn: sqlite3.Connection, edge) -> None:
     """Insert or replace an edge. Accepts an Edge object or individual params."""
     from codemesh.types import Edge
+
     if isinstance(edge, Edge):
         conn.execute(
             """
@@ -162,9 +184,15 @@ def insert_edge(conn: sqlite3.Connection, edge) -> None:
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                edge.id, edge.source_id, edge.target_id, edge.kind.value,
-                edge.confidence, edge.weight_source, edge.line,
-                edge.column, "{}",
+                edge.id,
+                edge.source_id,
+                edge.target_id,
+                edge.kind.value,
+                edge.confidence,
+                edge.weight_source,
+                edge.line,
+                edge.column,
+                "{}",
                 getattr(edge, "resolved_target", None) or "",
                 getattr(edge, "type_context", None) or "",
             ),
@@ -178,21 +206,114 @@ def insert_edge(conn: sqlite3.Connection, edge) -> None:
 
 # Stop words to filter from search queries
 _STOP_WORDS = {
-    "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for",
-    "of", "with", "by", "from", "is", "it", "that", "this", "are", "was",
-    "be", "has", "had", "have", "do", "does", "did", "will", "would", "could",
-    "should", "may", "might", "can", "shall", "not", "no", "all", "each",
-    "every", "how", "what", "where", "when", "who", "which", "why",
-    "i", "me", "my", "we", "our", "you", "your", "he", "she", "they",
-    "show", "give", "tell",
-    "been", "done", "made", "used", "using", "work", "works", "found",
-    "also", "into", "then", "than", "just", "more", "some", "such",
-    "over", "only", "out", "its", "so", "up", "as", "if",
-    "look", "need", "needs", "want", "happen", "happens",
-    "affect", "affected", "break", "breaks", "failing",
-    "implemented", "implement",
-    "code", "file", "files", "function", "method", "class", "type",
-    "fix", "bug", "called",
+    "the",
+    "a",
+    "an",
+    "and",
+    "or",
+    "but",
+    "in",
+    "on",
+    "at",
+    "to",
+    "for",
+    "of",
+    "with",
+    "by",
+    "from",
+    "is",
+    "it",
+    "that",
+    "this",
+    "are",
+    "was",
+    "be",
+    "has",
+    "had",
+    "have",
+    "do",
+    "does",
+    "did",
+    "will",
+    "would",
+    "could",
+    "should",
+    "may",
+    "might",
+    "can",
+    "shall",
+    "not",
+    "no",
+    "all",
+    "each",
+    "every",
+    "how",
+    "what",
+    "where",
+    "when",
+    "who",
+    "which",
+    "why",
+    "i",
+    "me",
+    "my",
+    "we",
+    "our",
+    "you",
+    "your",
+    "he",
+    "she",
+    "they",
+    "show",
+    "give",
+    "tell",
+    "been",
+    "done",
+    "made",
+    "used",
+    "using",
+    "work",
+    "works",
+    "found",
+    "also",
+    "into",
+    "then",
+    "than",
+    "just",
+    "more",
+    "some",
+    "such",
+    "over",
+    "only",
+    "out",
+    "its",
+    "so",
+    "up",
+    "as",
+    "if",
+    "look",
+    "need",
+    "needs",
+    "want",
+    "happen",
+    "happens",
+    "affect",
+    "affected",
+    "break",
+    "breaks",
+    "failing",
+    "implemented",
+    "implement",
+    "code",
+    "file",
+    "files",
+    "function",
+    "method",
+    "class",
+    "type",
+    "fix",
+    "bug",
+    "called",
 }
 
 
@@ -344,19 +465,29 @@ def _bounded_edit_distance(a: str, b: str, max_dist: int) -> int:
 def _kind_bonus(kind: str) -> int:
     """Kind-based bonus for search ranking."""
     bonuses = {
-        "function": 10, "method": 10, "class": 8, "interface": 9,
-        "type_alias": 6, "struct": 6, "trait": 9, "enum": 5,
-        "property": 3, "field": 3, "variable": 2, "constant": 3,
-        "import": 1, "file": 0,
+        "function": 10,
+        "method": 10,
+        "class": 8,
+        "interface": 9,
+        "type_alias": 6,
+        "struct": 6,
+        "trait": 9,
+        "enum": 5,
+        "property": 3,
+        "field": 3,
+        "variable": 2,
+        "constant": 3,
+        "import": 1,
+        "file": 0,
     }
     return bonuses.get(kind, 0)
 
 
 def _exported_bonus(node) -> int:
     """Bonus for exported/public symbols."""
-    if hasattr(node, 'is_exported') and node.is_exported:
+    if hasattr(node, "is_exported") and node.is_exported:
         return 5
-    if hasattr(node, 'visibility') and node.visibility == 'private':
+    if hasattr(node, "visibility") and node.visibility == "private":
         return -3
     return 0
 
@@ -382,8 +513,9 @@ def _name_match_bonus(node_name: str, query: str) -> int:
     return 0
 
 
-def search_nodes_fts(conn: sqlite3.Connection, query: str,
-                    limit: int = 10) -> list[tuple[Node, float]]:
+def search_nodes_fts(
+    conn: sqlite3.Connection, query: str, limit: int = 10
+) -> list[tuple[Node, float]]:
     """Full-text search with BM25 + multi-signal scoring.
 
     3-tier search strategy:
@@ -450,7 +582,9 @@ def search_nodes_fts(conn: sqlite3.Connection, query: str,
                     f"%{like_query}%",
                     f"%{like_query}%",
                     f"{like_query}%",
-                ] + list(seen_ids) + [limit * 3],
+                ]
+                + list(seen_ids)
+                + [limit * 3],
             ).fetchall()
             for row in rows:
                 node = row_to_node(row)
@@ -508,19 +642,16 @@ def search_nodes_fts(conn: sqlite3.Connection, query: str,
 
 # — Delta indexing helpers —
 
+
 def get_nodes_by_file(conn: sqlite3.Connection, file_path: str) -> list:
     """Fetch all nodes for a given file path."""
-    rows = conn.execute(
-        "SELECT * FROM nodes WHERE file_path = ?", (file_path,)
-    ).fetchall()
+    rows = conn.execute("SELECT * FROM nodes WHERE file_path = ?", (file_path,)).fetchall()
     return [row_to_node(r) for r in rows]
 
 
 def get_node_by_qualified_name(conn: sqlite3.Connection, qualified_name: str) -> Node | None:
     """Fetch a node by qualified name."""
-    row = conn.execute(
-        "SELECT * FROM nodes WHERE qualified_name = ?", (qualified_name,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM nodes WHERE qualified_name = ?", (qualified_name,)).fetchone()
     return row_to_node(row) if row else None
 
 
@@ -537,9 +668,7 @@ def delete_edges_by_source(conn: sqlite3.Connection, node_id: str) -> None:
 
 def get_incoming_edges_to_node(conn: sqlite3.Connection, node_id: str) -> list:
     """Fetch all edges targeting a node."""
-    rows = conn.execute(
-        "SELECT * FROM edges WHERE target_id = ?", (node_id,)
-    ).fetchall()
+    rows = conn.execute("SELECT * FROM edges WHERE target_id = ?", (node_id,)).fetchall()
     return rows
 
 
@@ -562,7 +691,6 @@ def get_files_referencing_node(conn: sqlite3.Connection, node_id: str) -> list[s
 def count_ghost_edges(conn: sqlite3.Connection) -> int:
     """Count edges whose target node no longer exists (integrity check)."""
     row = conn.execute(
-        "SELECT COUNT(*) FROM edges"
-        " WHERE target_id NOT IN (SELECT id FROM nodes)"
+        "SELECT COUNT(*) FROM edges WHERE target_id NOT IN (SELECT id FROM nodes)"
     ).fetchone()
     return row[0] if row else 0
