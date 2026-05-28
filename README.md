@@ -149,18 +149,45 @@ Tested across **7 real-world open-source codebases** spanning 7 languages. Each 
 
 The gains scale with codebase size: on large repos the agent answers from the index in a handful of calls with **zero file reads**, while the baseline agent fans out across grep/find/Read (and the sub-agents it spawns). On a small repo like Gin (~110 files) native search is already cheap, so the margin narrows.
 
-### CodeMesh Query Performance
+### CodeMesh Indexing + Query Performance
 
-Raw FTS5 BM25 query latency on indexed codebases (measured locally, M-series Mac, 12 queries per repo):
+Measured locally on M-series Mac. 5 queries per repo, each cell shows average latency.
 
-| Codebase | Files | Nodes | Edges | Index Time | Avg Query | P99 Query |
-|----------|-------|-------|-------|------------|-----------|-----------|
-| **Excalidraw** | 628 | 9,678 | 42,644 | 2.5s | **5.0ms** | 24.9ms |
-| **Tokio** | 778 | 14,474 | 45,210 | 2.4s | **6.8ms** | 28.8ms |
-| **Django** | 3,020 | 53,155 | 472,322 | 25.1s | **36.6ms** | 287.9ms |
-| **VS Code** | 10,422 | 299,598 | 1,358,354 | 162.0s | **150.7ms** | 494.7ms |
+| Codebase | Language | Files | Nodes | Edges | Index Time | Avg Query |
+|----------|----------|-------|-------|-------|------------|-----------|
+| **Excalidraw** | TypeScript | 628 | 9,678 | 42,644 | 3.3s | 148.7ms |
+| **Tokio** | Rust | 778 | 14,474 | 45,210 | 2.9s | 133.8ms |
+| **Gin** | Go | 99 | 1,748 | 7,846 | 0.5s | 91.8ms |
+| **OkHttp** | Java/Kotlin | 640 | 2,070 | 2,808 | 0.8s | 104.3ms |
+| **Alamofire** | Swift | 108 | 3,705 | 3,820 | 0.6s | 92.5ms |
+| **Django** | Python | 3,020 | 53,155 | 472,322 | 28.5s | 188.0ms |
+| **VS Code** | TypeScript | 10,422 | 299,902 | 1,359,313 | 177.0s | 572.1ms |
 
-Indexing is fully automatic — `codemesh index` handles extraction, batch insertion, FTS5 rebuild, and reference resolution. Edge insertion uses `executemany` (single prepared statement, all rows in one call) and resolution uses in-memory lookups with batch `UPDATE`, bringing Django (521K edges) from >10 minutes down to 25 seconds. Query latency scales with graph size: small repos (Excalidraw, Tokio) are single-digit milliseconds, while large repos (VS Code at 1.3M edges) are ~150ms average. All queries hit FTS5 BM25 indexes first, then expand via graph walk.
+### CodeMesh vs CG — Indexing Speedup
+
+| Codebase | CM Time | CG Time | Speedup |
+|----------|---------|---------|---------|
+| Excalidraw | 3.3s | 6.2s | **1.9x** |
+| Tokio | 2.9s | 8.9s | **3.1x** |
+| Django | 28.5s | 42.2s | **1.5x** |
+| VS Code | 177.0s | 290.1s | **1.6x** |
+| OkHttp | 0.8s | 7.8s | **9.6x** |
+| Gin | 0.5s | 1.2s | **2.3x** |
+| Alamofire | 0.6s | 4.1s | **6.4x** |
+
+### CodeMesh vs CG — Query Latency
+
+| Codebase | CM Avg | CG Avg | Winner |
+|----------|--------|--------|--------|
+| Excalidraw | 148.7ms | 209.1ms | **CM 1.4x** |
+| Tokio | 133.8ms | 189.1ms | **CM 1.4x** |
+| Django | 188.0ms | 233.0ms | **CM 1.2x** |
+| VS Code | 572.1ms | 528.0ms | CG 1.1x |
+| OkHttp | 104.3ms | 149.7ms | **CM 1.4x** |
+| Gin | 91.8ms | 130.8ms | **CM 1.4x** |
+| Alamofire | 92.5ms | 139.9ms | **CM 1.5x** |
+
+**Summary: CodeMesh wins indexing on all 7 repos (1.5-9.6x faster) and wins querying on 6/7 repos (1.2-1.5x faster). On the largest repo (VS Code at 1.3M edges), CG edges ahead on query speed by 1.1x, likely due to more compact graph storage.**
 
 ### Retrieval Quality
 
@@ -253,7 +280,7 @@ Context Builder (token-budget-aware XML output)
 
 ## Supported Languages
 
-TypeScript · JavaScript · Python · Go · Rust · Java · C# · PHP · Ruby · C · C++ · Swift · Kotlin · Dart · Svelte · Vue
+TypeScript · JavaScript · Python · Rust · Go · Java · Kotlin · Swift · C · C++
 
 ## Development
 
