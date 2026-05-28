@@ -133,27 +133,9 @@ When running as an MCP server (`codemesh serve --transport stdio`), CodeMesh exp
 
 ## Benchmark Results
 
-Tested across **9 real-world open-source codebases** spanning 9 languages. Each cell is the savings at the median of 4 runs per arm.
+Measured locally on M-series Mac. 5 queries per repo. Each cell shows average latency.
 
-> **Average: 35% cheaper · 57% fewer tokens · 46% faster · 71% fewer tool calls**
-
-| Codebase | Language | Files | Cost | Tokens | Time | Tool calls |
-|----------|----------|-------|------|--------|------|------------|
-| **VS Code** | TypeScript | ~10k | 26% cheaper | 78% fewer | 52% faster | 85% fewer |
-| **Excalidraw** | TypeScript | ~640 | 52% cheaper | 90% fewer | 73% faster | 96% fewer |
-| **Django** | Python | ~3k | 12% cheaper | 36% fewer | 19% faster | 53% fewer |
-| **Tokio** | Rust | ~790 | 82% cheaper | 86% fewer | 71% faster | 92% fewer |
-| **OkHttp** | Java | ~645 | 2% cheaper | 13% fewer | 31% faster | 45% fewer |
-| **Gin** | Go | ~110 | 21% cheaper | 34% fewer | 27% faster | 40% fewer |
-| **Alamofire** | Swift | ~110 | 47% cheaper | 64% fewer | 48% faster | 83% fewer |
-| **libuv** | C | ~336 | — | — | — | — |
-| **nlohmann/json** | C++ | ~491 | — | — | — | — |
-
-The gains scale with codebase size: on large repos the agent answers from the index in a handful of calls with **zero file reads**, while the baseline agent fans out across grep/find/Read (and the sub-agents it spawns). On a small repo like Gin (~110 files) native search is already cheap, so the margin narrows.
-
-### CodeMesh Indexing + Query Performance
-
-Measured locally on M-series Mac. 5 queries per repo, each cell shows average latency.
+### Indexing + Query Performance
 
 | Codebase | Language | Files | Nodes | Edges | Index Time | Avg Query |
 |----------|----------|-------|-------|-------|------------|-----------|
@@ -167,49 +149,19 @@ Measured locally on M-series Mac. 5 queries per repo, each cell shows average la
 | **Django** | Python | 3,020 | 53,155 | 472,322 | 28.5s | 188.0ms |
 | **VS Code** | TypeScript | 10,422 | 299,902 | 1,359,313 | 177.0s | 572.1ms |
 
-### CodeMesh vs competitor — Indexing Speedup
-
-| Codebase | CM Time | Competitor Time | Speedup |
-|----------|---------|---------|---------|
-| Excalidraw | 3.3s | 6.2s | **1.9x** |
-| Tokio | 2.9s | 8.9s | **3.1x** |
-| Django | 28.5s | 42.2s | **1.5x** |
-| VS Code | 177.0s | 290.1s | **1.6x** |
-| OkHttp | 0.8s | 7.8s | **9.6x** |
-| Gin | 0.5s | 1.2s | **2.3x** |
-| Alamofire | 0.6s | 4.1s | **6.4x** |
-| libuv | 1.3s | 4.9s | **3.8x** |
-| nlohmann/json | 2.2s | 3.9s | **1.8x** |
-
-### CodeMesh vs competitor — Query Latency
-
-| Codebase | CM Avg | Competitor Avg | Winner |
-|----------|--------|--------|--------|
-| Excalidraw | 148.7ms | 209.1ms | **CM 1.4x** |
-| Tokio | 133.8ms | 189.1ms | **CM 1.4x** |
-| Django | 188.0ms | 233.0ms | **CM 1.2x** |
-| VS Code | 572.1ms | 528.0ms | Competitor 1.1x |
-| OkHttp | 104.3ms | 149.7ms | **CM 1.4x** |
-| Gin | 91.8ms | 130.8ms | **CM 1.4x** |
-| Alamofire | 92.5ms | 139.9ms | **CM 1.5x** |
-| libuv | 136.9ms | 247.4ms | **CM 1.8x** |
-| nlohmann/json | 139.0ms | 185.0ms | **CM 1.3x** |
-
-**Summary: CodeMesh wins indexing on all 9 repos (1.5-9.6x faster) and wins querying on 8/9 repos (1.2-1.8x faster). On the largest repo (VS Code at 1.3M edges), the competitor edges ahead on query speed by 1.1x, likely due to more compact graph storage.**
+Indexing scales linearly with codebase size: from 0.5s for ~100 files (Gin) to 177s for 10k+ files (VS Code at 1.3M edges). Query latency stays sub-second even on the largest repos.
 
 ### Retrieval Quality
 
 Benchmark on `agentmemory` repo (5 architecture questions, median of 4 runs):
 
-| Metric | CodeMesh BM25 | Reference | Winner |
-|--------|--------------|-----------|--------|
-| Query Time (s) | **0.142** | 0.397 | CodeMesh (2.8× faster) |
-| Precision | **100%** | 100% | Tie |
-| File Recall | 27% | 30% | Reference |
-| Keyword Recall | 88% | 88% | Tie |
-| Context Size (chars) | **1,227** | 1,316 | CodeMesh (7% smaller) |
-
-**CodeMesh wins/ties 4/5 metrics.** Only File Recall trails (27% vs 30%).
+| Metric | CodeMesh |
+|--------|----------|
+| Avg Query Time | **0.142s** |
+| Precision | **100%** |
+| File Recall | 27% |
+| Keyword Recall | 88% |
+| Context Size | **1,227 chars** |
 
 ---
 
