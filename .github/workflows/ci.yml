@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
-      - run: uv pip install -e ".[dev]"
+      - run: uv pip install --system -e ".[dev]"
       - run: ruff check .
       - run: ruff format --check
 
@@ -21,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
-      - run: uv pip install -e ".[dev]"
+      - run: uv pip install --system -e ".[dev]"
       - run: mypy codemesh/
 
   test:
@@ -34,7 +34,7 @@ jobs:
       - uses: astral-sh/setup-uv@v4
         with:
           python-version: ${{ matrix.python-version }}
-      - run: uv pip install -e ".[dev]"
+      - run: uv pip install --system -e ".[dev]"
       - run: pytest tests/ -v --cov=codemesh --cov-report=xml
       - uses: codecov/codecov-action@v4
         if: matrix.python-version == '3.12'

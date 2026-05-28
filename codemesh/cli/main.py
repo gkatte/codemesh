@@ -45,7 +45,7 @@ def init(
         from codemesh.indexer import index_project as do_index
 
         typer.echo(f"\nIndexing {root}...")
-        stats = do_index(root)
+        stats = do_index(root, quiet=True)
         typer.echo(
             f"Done! {stats['nodes']} nodes, {stats['edges']} edges "
             f"indexed in {stats.get('time_seconds', 0):.1f}s."
@@ -144,11 +144,13 @@ def index(
         raise typer.Exit(1)
 
     typer.echo(f"Indexing {root}...")
-    stats = index_project(root, max_workers=workers)
-    typer.echo(
-        f"Done! {stats['nodes']} nodes, {stats['edges']} edges "
-        f"indexed in {stats.get('time_seconds', 0):.1f}s."
-    )
+    stats = index_project(root, max_workers=workers, quiet=quiet)
+    if quiet:
+        typer.echo(
+            f"Done! {stats['nodes']} nodes, {stats['edges']} edges "
+            f"indexed in {stats.get('time_seconds', 0):.1f}s."
+        )
+    # When not quiet, the progress bar already shows completion
 
 
 @app.command()

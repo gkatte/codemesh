@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -106,25 +107,25 @@ class ExtractionOrchestrator:
         self.root = root
         self.max_workers = max_workers
 
-    def extract_all(self) -> tuple[list[Node], list[Edge]]:
+    def extract_all(
+        self, progress_cb: Callable[[int, int], None] | None = None
+    ) -> tuple[list[Node], list[Edge]]:
         """Extract all nodes and edges from the project.
 
-        Returns (nodes, edges) tuples.
+        Args:
+            progress_cb: Optional callback(completed, total) called after each file.
         """
         files = discover_files(self.root)
         logger.info("Discovered %d source files in %s", len(files), self.root)
+        total = len(files)
 
         all_nodes: list[Node] = []
         all_edges: list[Edge] = []
 
-        # Use ThreadPoolExecutor instead of ProcessPoolExecutor.
-        # ProcessPoolExecutor on macOS can deadlock/fork-bomb when the main
-        # process has large memory-mapped libraries (tree-sitter, etc.).
-        # Tree-sitter parsing is fast enough that GIL contention is not a bottleneck.
-        workers = self.max_workers or min(8, len(files)) or 1
+        workers = self.max_workers or min(8, total) or 1
         with ThreadPoolExecutor(max_workers=workers) as executor:
             futures = {executor.submit(_parse_file, f): f for f in files}
-            for future in as_completed(futures):
+            for i, future in enumerate(as_completed(futures), 1):
                 file_path = futures[future]
                 try:
                     nodes, edges = future.result()
@@ -132,6 +133,8 @@ class ExtractionOrchestrator:
                     all_edges.extend(edges)
                 except Exception as e:
                     logger.warning("Failed to parse %s: %s", file_path, e)
+                if progress_cb:
+                    progress_cb(i, total)
 
         logger.info("Extracted %d nodes, %d edges", len(all_nodes), len(all_edges))
         return all_nodes, all_edges

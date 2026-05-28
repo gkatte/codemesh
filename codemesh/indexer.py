@@ -7,9 +7,9 @@ import time
 from pathlib import Path
 
 from codemesh.db.connection import get_connection, get_db_path
-from codemesh.db.queries import count_edges, count_nodes, insert_edge, insert_node
+from codemesh.db.queries import count_edges, count_nodes
 from codemesh.db.schema import init_db
-from codemesh.extraction.orchestrator import ExtractionOrchestrator
+from codemesh.extraction.orchestrator import ExtractionOrchestrator, discover_files
 from codemesh.resolution.resolver import ReferenceResolver
 
 logger = logging.getLogger(__name__)
@@ -18,46 +18,89 @@ logger = logging.getLogger(__name__)
 def index_project(
     root: Path,
     max_workers: int | None = None,
+    quiet: bool = False,
 ) -> dict[str, int | float]:
     """Index an entire project. Returns dict with counts.
 
     Steps:
-    1. Extract AST nodes/edges via tree-sitter
-    2. Insert into SQLite
-    3. Resolve references
-
-    No embeddings — pure BM25 keyword search with graph walk expansion.
+    1. Discover source files
+    2. Extract AST nodes/edges via tree-sitter (with progress bar)
+    3. Batch insert into SQLite
+    4. Rebuild FTS5 index
+    5. Resolve references
+    6. Type inference for call edges
     """
     db_path = get_db_path(root)
     init_db(db_path)
 
     t0 = time.time()
+    node_count = 0
+    edge_count = 0
 
-    # Step 1: Extract
-    orchestrator = ExtractionOrchestrator(root, max_workers=max_workers)
-    nodes, edges = orchestrator.extract_all()
-    t1 = time.time()
-    logger.info("Extraction: %d nodes, %d edges in %.2fs", len(nodes), len(edges), t1 - t0)
+    # Count files upfront for progress bar total
+    all_files = discover_files(root)
+    total_files = len(all_files)
+    logger.info("Discovered %d source files in %s", total_files, root)
+
+    if quiet:
+        # No progress bar — run silently
+        orchestrator = ExtractionOrchestrator(root, max_workers=max_workers)
+        nodes, edges = orchestrator.extract_all()
+        t1 = time.time()
+    else:
+        from rich.progress import (
+            BarColumn,
+            Progress,
+            SpinnerColumn,
+            TaskProgressColumn,
+            TextColumn,
+            TimeElapsedColumn,
+            TimeRemainingColumn,
+        )
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[bold cyan]{task.description}"),
+            BarColumn(bar_width=40),
+            TaskProgressColumn(),
+            TextColumn("\u2022"),
+            TimeElapsedColumn(),
+            TextColumn("\u2022"),
+            TimeRemainingColumn(),
+            transient=True,
+        ) as progress:
+            parse_task = progress.add_task("Parsing code  ", total=total_files)
+
+            orchestrator = ExtractionOrchestrator(root, max_workers=max_workers)
+
+            def on_file_done(completed: int, total: int) -> None:
+                progress.update(parse_task, completed=completed, total=total)
+
+            nodes, edges = orchestrator.extract_all(progress_cb=on_file_done)
+            t1 = time.time()
+
+            progress.update(
+                parse_task,
+                description="Parsing code  ... done",
+                completed=total_files,
+                total=total_files,
+            )
+        logger.info("Extraction: %d nodes, %d edges in %.2fs", len(nodes), len(edges), t1 - t0)
 
     with get_connection(db_path) as conn:
-        # Clear existing data before re-indexing
         conn.execute("DELETE FROM nodes_fts")
         conn.execute("DELETE FROM edges")
         conn.execute("DELETE FROM nodes")
         conn.commit()
 
-        # Optimize for bulk load: disable fsync, use exclusive lock
-        # Must be done after commit (can't change inside transaction)
         conn.execute("PRAGMA synchronous=OFF")
         conn.execute("PRAGMA locking_mode=EXCLUSIVE")
 
-        # Drop FTS5 triggers during bulk load to avoid per-row index maintenance
-        # Rebuild FTS5 in one shot after all nodes are inserted (~100x faster)
         conn.execute("DROP TRIGGER IF EXISTS nodes_ai")
         conn.execute("DROP TRIGGER IF EXISTS nodes_ad")
         conn.execute("DROP TRIGGER IF EXISTS nodes_au")
 
-        # Step 2: Batch insert nodes via executemany
+        # Batch insert nodes
         node_rows = [
             (
                 n.id,
@@ -97,12 +140,8 @@ def index_project(
         t2 = time.time()
         logger.info("Node insert: %d in %.2fs", len(nodes), t2 - t1)
 
-        # Step 3: Batch insert edges via executemany
-        # Pre-compute cross-file deps in Python (O(n) with set lookup)
-        file_map: dict[str, str] = {}
-        for n in nodes:
-            file_map[n.id] = str(n.file_path)
-
+        # Batch insert edges
+        file_map: dict[str, str] = {n.id: str(n.file_path) for n in nodes}
         edge_rows = []
         dep_rows: list[tuple[str, str]] = []
         seen_deps: set[tuple[str, str]] = set()
@@ -148,10 +187,10 @@ def index_project(
         t3 = time.time()
         logger.info("Edge insert: %d in %.2fs", len(edges), t3 - t2)
 
-        # Step 4: Rebuild FTS5 index in one shot (vs thousands of trigger-fired inserts)
+        # Rebuild FTS5
         conn.execute("INSERT INTO nodes_fts(nodes_fts) VALUES('rebuild')")
 
-        # Step 5: Restore FTS5 triggers for future incremental inserts
+        # Restore FTS5 triggers
         conn.execute(
             "CREATE TRIGGER nodes_ai AFTER INSERT ON nodes BEGIN "
             "INSERT INTO nodes_fts(rowid, id, name, qualified_name, docstring, signature) "
@@ -173,18 +212,16 @@ def index_project(
             "END"
         )
 
-        # Step 6: Commit bulk inserts, then restore safe PRAGMAs
         conn.commit()
         conn.execute("PRAGMA synchronous=NORMAL")
         conn.execute("PRAGMA locking_mode=NORMAL")
 
-        # Step 7: Resolve references
+        # Resolve references
         resolver = ReferenceResolver(conn)
         resolved = resolver.resolve_all()
         t4 = time.time()
         logger.info("Resolution: %d/%d resolved in %.2fs", resolved, len(edges), t4 - t3)
 
-        # Step 8: Type inference for call edges
         typed = resolver.resolve_call_types()
         t5 = time.time()
         logger.info(
@@ -195,119 +232,9 @@ def index_project(
         edge_count = count_edges(conn)
 
     total_time = time.time() - t0
-    logger.info(
-        "Indexed %d nodes, %d edges in %.2fs",
-        node_count,
-        edge_count,
-        total_time,
-    )
+    logger.info("Indexed %d nodes, %d edges in %.2fs", node_count, edge_count, total_time)
     return {
         "nodes": node_count,
         "edges": edge_count,
         "time_seconds": round(total_time, 2),
     }
-
-
-def delta_index_file(root: Path, file_path: Path) -> dict[str, int]:
-    """Incrementally re-index a single file using symbol-level delta.
-
-    Compares old nodes (from DB) vs new extraction (from tree-sitter),
-    computes deleted/added/modified symbols, and applies minimal changes.
-    Also invalidates cross-file edges pointing to deleted nodes.
-    """
-    from codemesh.db.queries import (
-        count_ghost_edges,
-        delete_edges_by_source,
-        delete_node_and_edges,
-        get_nodes_by_file,
-        insert_file_node_dep,
-    )
-    from codemesh.extraction.orchestrator import _parse_file
-
-    db_path = get_db_path(root)
-    init_db(db_path)
-
-    result = {"deleted": 0, "added": 0, "modified": 0, "ghost_edges": 0}
-
-    with get_connection(db_path) as conn:
-        # Get old nodes for this file
-        old_nodes = get_nodes_by_file(conn, str(file_path))
-        old_by_name = {n.qualified_name: n for n in old_nodes}
-
-        # Extract new nodes/edges from file
-        new_nodes, new_edges = _parse_file(file_path)
-        new_by_name = {n.qualified_name: n for n in new_nodes}
-
-        old_names = set(old_by_name.keys())
-        new_names = set(new_by_name.keys())
-
-        deleted = old_names - new_names
-        added = new_names - old_names
-        common = old_names & new_names
-        modified = {k for k in common if old_by_name[k].content_hash != new_by_name[k].content_hash}
-
-        # 1. Delete removed nodes and invalidate cross-file edges
-        for name in deleted:
-            node = old_by_name[name]
-            delete_node_and_edges(conn, node.id)
-            conn.execute("DELETE FROM file_node_deps WHERE node_id = ?", (node.id,))
-            result["deleted"] += 1
-
-        # 2. Insert new nodes
-        for name in added:
-            insert_node(conn, new_by_name[name])
-            result["added"] += 1
-
-        # 3. Update modified nodes (preserve IDs, update hash/signature)
-        for name in modified:
-            new_node = new_by_name[name]
-            delete_edges_by_source(conn, new_node.id)
-            insert_node(conn, new_node)
-            result["modified"] += 1
-
-        # 4. Re-extract edges for affected nodes
-        affected = added | modified
-        for name in affected:
-            node = new_by_name[name]
-            delete_edges_by_source(conn, node.id)
-            for edge in new_edges:
-                if edge.source_id == node.id:
-                    insert_edge(conn, edge)
-                    # Track cross-file deps
-                    if edge.source_id != edge.target_id:
-                        insert_file_node_dep(conn, str(file_path), edge.target_id)
-
-        # 5. Re-extract edges for unmodified nodes that reference changed nodes
-        #    (handles case where target of an edge was deleted and re-added)
-        for name in old_names - affected:
-            node = old_by_name[name]
-            for edge in new_edges:
-                if edge.source_id == node.id:
-                    insert_file_node_dep(conn, str(file_path), edge.target_id)
-
-        # 6. Integrity check
-        result["ghost_edges"] = count_ghost_edges(conn)
-        conn.commit()
-
-    logger.info(
-        "Delta index %s: -%d +%d ~%d nodes, %d ghost edges",
-        file_path,
-        result["deleted"],
-        result["added"],
-        result["modified"],
-        result["ghost_edges"],
-    )
-    return result
-
-
-def sync_project(root: Path, debounce_delay: float = 1.0) -> None:
-    """Start file watcher for a project."""
-    db_path = get_db_path(root)
-    init_db(db_path)
-
-    import signal
-
-    from codemesh.sync.watcher import FileWatcher
-
-    with FileWatcher(root, db_path, debounce_delay=debounce_delay):
-        signal.pause()

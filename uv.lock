@@ -175,6 +175,7 @@ source = { editable = "." }
 dependencies = [
     { name = "mcp" },
     { name = "rapidfuzz" },
+    { name = "rich" },
     { name = "tree-sitter" },
     { name = "tree-sitter-c" },
     { name = "tree-sitter-cpp" },
@@ -204,6 +205,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0" },
     { name = "rapidfuzz", specifier = ">=3.14" },
+    { name = "rich", specifier = ">=13.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8" },
     { name = "tree-sitter", specifier = ">=0.25" },
     { name = "tree-sitter-c", specifier = ">=0.23" },

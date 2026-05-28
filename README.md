@@ -178,24 +178,24 @@ The savings come from two sources: (1) CodeMesh returns compact structured resul
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        Claude Code                               │
-│                                                                  │
-│  "Implement user authentication"                                 │
-│           │                                                      │
-│           ▼                                                      │
+│                        Claude Code                              │
+│                                                                 │
+│  "Implement user authentication"                                │
+│           │                                                     │
+│           ▼                                                     │
 │  ┌─────────────────┐      ┌─────────────────┐                   │
 │  │  Explore Agent  │ ──── │  Explore Agent  │                   │
 │  └────────┬────────┘      └────────┬────────┘                   │
-│           │                        │                             │
-└───────────┼────────────────────────┼─────────────────────────────┘
+│           │                        │                            │
+└───────────┼────────────────────────┼────────────────────────────┘
             │                        │
             ▼                        ▼
 ┌───────────────────────────────────────────────────────────────────┐
 │                     CodeMesh MCP Server                           │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐               │
-│  │   Search    │  │   Callers   │  │   Context   │               │
-│  │  "auth"     │  │  "login()"  │  │  for task   │               │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘               │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                │
+│  │   Search    │  │   Callers   │  │   Context   │                │
+│  │  "auth"     │  │  "login()"  │  │  for task   │                │
+│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘                │
 │         │                │                │                       │
 │         └────────────────┼────────────────┘                       │
 │                          ▼                                        │
@@ -270,3 +270,13 @@ mypy codemesh/
 ## License
 
 MIT
+
+---
+
+<div align="center">
+
+**Made for AI coding agents — Claude Code, Cursor, Codex CLI, opencode, Hermes Agent, Gemini CLI, Antigravity IDE, and Kiro**
+
+[Report Bug](https://github.com/gkatte/codemesh/issues) · [Request Feature](https://github.com/gkatte/codemesh/issues)
+
+</div>
