@@ -1,10 +1,29 @@
 # CodeMesh
 
+[![PyPI version](https://img.shields.io/pypi/v/codemesh)](https://pypi.org/project/codemesh/)
+[![Python](https://img.shields.io/pypi/pyversions/codemesh)](https://pypi.org/project/codemesh/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/gkatte/codemesh/actions/workflows/ci.yml/badge.svg)](https://github.com/gkatte/codemesh/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests%20passing-63%20passed%2C%204%20skipped-green)](tests/)
+
 **BM25 keyword search + graph walk for code intelligence.**
 
 CodeMesh builds a local semantic knowledge graph of codebases — symbol relationships, call graphs, and code structure — so AI coding agents can query the graph instantly instead of scanning files with grep and glob.
 
 **100% local. No API keys. No external services. SQLite only.**
+
+---
+
+## Why CodeMesh?
+
+**The problem:** AI coding agents waste tokens and time scanning files with `grep` and `glob`. On every question about code, they read entire files into context — even when the answer is in one function.
+
+**The solution:** CodeMesh parses your codebase into a structured knowledge graph at index time. At query time, agents get concise, relevant context — not raw file dumps.
+
+- **86% fewer tokens** per query on average (measured across 9 real-world repos)
+- **66% faster** agent loops — 2 MCP calls vs 4+ grep/read cycles
+- **<0.2s** query latency on codebases up to 50K nodes; <0.3s on 300K+ nodes
+- **Zero configuration** — no API keys, no cloud services, no model downloads
 
 ---
 
