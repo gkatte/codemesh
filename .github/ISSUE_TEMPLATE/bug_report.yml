@@ -1,0 +1,29 @@
+---
+name: Bug report
+about: Report a bug in CodeMesh
+title: "[BUG] "
+labels: bug
+assignees: ''
+
+---
+
+**Describe the bug**
+A clear description of what the bug is.
+
+**To Reproduce**
+Steps to reproduce:
+1. Run `codemesh index` on ...
+2. Run `codemesh query "..."` ...
+3. See error
+
+**Expected behavior**
+What you expected to happen.
+
+**Environment**
+- OS: [e.g. macOS 14, Ubuntu 24.04]
+- Python: [e.g. 3.12.5]
+- CodeMesh: [e.g. 0.1.0]
+- Repo size: [e.g. ~500 files, 50K LOC]
+
+**Additional context**
+Any other context, screenshots, or logs.
