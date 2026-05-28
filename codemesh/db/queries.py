@@ -562,30 +562,54 @@ def search_nodes_fts(
     if len(results) < limit:
         like_query = query.strip()
         try:
-            rows = conn.execute(
+            if seen_ids:
+                placeholders = ",".join("?" * len(seen_ids))
+                sql = f"""
+                    SELECT nodes.*,
+                        CASE
+                            WHEN lower(name) = lower(?) THEN 1.0
+                            WHEN lower(name) LIKE lower(?) THEN 0.9
+                            WHEN lower(qualified_name) LIKE lower(?) THEN 0.7
+                            ELSE 0.5
+                        END as score
+                    FROM nodes
+                    WHERE (lower(name) LIKE lower(?) OR lower(qualified_name) LIKE lower(?))
+                        AND id NOT IN ({placeholders})
+                    ORDER BY score DESC, length(name) ASC LIMIT ?
                 """
-                SELECT nodes.*,
-                    CASE
-                        WHEN lower(name) = lower(?) THEN 1.0
-                        WHEN lower(name) LIKE lower(?) THEN 0.9
-                        WHEN lower(qualified_name) LIKE lower(?) THEN 0.7
-                        ELSE 0.5
-                    END as score
-                FROM nodes
-                WHERE (lower(name) LIKE lower(?) OR lower(qualified_name) LIKE lower(?))
-                    AND id NOT IN ({})
-                ORDER BY score DESC, length(name) ASC LIMIT ?
-                """.format(",".join("?" * len(seen_ids)) if seen_ids else "NULL"),
-                [
+                params = (
+                    [
+                        like_query,
+                        f"{like_query}%",
+                        f"%{like_query}%",
+                        f"%{like_query}%",
+                        f"{like_query}%",
+                    ]
+                    + list(seen_ids)
+                    + [limit * 3]
+                )
+            else:
+                sql = """
+                    SELECT nodes.*,
+                        CASE
+                            WHEN lower(name) = lower(?) THEN 1.0
+                            WHEN lower(name) LIKE lower(?) THEN 0.9
+                            WHEN lower(qualified_name) LIKE lower(?) THEN 0.7
+                            ELSE 0.5
+                        END as score
+                    FROM nodes
+                    WHERE (lower(name) LIKE lower(?) OR lower(qualified_name) LIKE lower(?))
+                    ORDER BY score DESC, length(name) ASC LIMIT ?
+                """
+                params = [
                     like_query,
                     f"{like_query}%",
                     f"%{like_query}%",
                     f"%{like_query}%",
                     f"{like_query}%",
+                    limit * 3,
                 ]
-                + list(seen_ids)
-                + [limit * 3],
-            ).fetchall()
+            rows = conn.execute(sql, params).fetchall()
             for row in rows:
                 node = row_to_node(row)
                 results.append((node, row["score"]))
