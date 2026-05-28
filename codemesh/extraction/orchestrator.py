@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import tree_sitter
@@ -26,7 +26,10 @@ EXTENSION_MAP: dict[str, Language] = {
     ".java": Language.JAVA,
     ".cpp": Language.CPP,
     ".c": Language.C,
+    ".h": Language.C,
+    ".hpp": Language.CPP,
     ".rb": Language.RUBY,
+    ".swift": Language.SWIFT,
 }
 
 # Directories to skip
@@ -153,6 +156,26 @@ def _make_parser(language: Language) -> tree_sitter.Parser | None:
             import tree_sitter_typescript
 
             lang = tree_sitter.Language(tree_sitter_typescript.language_tsx())
+        elif language == Language.GO:
+            import tree_sitter_go
+
+            lang = tree_sitter.Language(tree_sitter_go.language())
+        elif language == Language.JAVA:
+            import tree_sitter_java
+
+            lang = tree_sitter.Language(tree_sitter_java.language())
+        elif language == Language.SWIFT:
+            import tree_sitter_swift
+
+            lang = tree_sitter.Language(tree_sitter_swift.language())
+        elif language == Language.C:
+            import tree_sitter_c
+
+            lang = tree_sitter.Language(tree_sitter_c.language())
+        elif language == Language.CPP:
+            import tree_sitter_cpp
+
+            lang = tree_sitter.Language(tree_sitter_cpp.language())
         else:
             return None
         return tree_sitter.Parser(lang)

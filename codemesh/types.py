@@ -66,6 +66,7 @@ class Language(enum.Enum):
     CPP = "cpp"
     C = "c"
     RUBY = "ruby"
+    SWIFT = "swift"
     UNKNOWN = "unknown"
 
 

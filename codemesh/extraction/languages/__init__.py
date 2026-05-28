@@ -59,5 +59,35 @@ def _register_all() -> None:
     except ImportError:
         pass
 
+    try:
+        from codemesh.extraction.languages.swift import SwiftExtractor
+
+        register_extractor(Language.SWIFT, SwiftExtractor())
+    except ImportError:
+        pass
+
+    try:
+        from codemesh.extraction.languages.go import GoExtractor
+
+        register_extractor(Language.GO, GoExtractor())
+    except ImportError:
+        pass
+
+    try:
+        from codemesh.extraction.languages.java import JavaExtractor
+
+        register_extractor(Language.JAVA, JavaExtractor())
+    except ImportError:
+        pass
+
+    try:
+        from codemesh.extraction.languages.c_family import CFamilyExtractor
+
+        c_family_extractor = CFamilyExtractor()
+        register_extractor(Language.C, c_family_extractor)
+        register_extractor(Language.CPP, c_family_extractor)
+    except ImportError:
+        pass
+
 
 _register_all()
