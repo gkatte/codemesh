@@ -46,34 +46,125 @@ def index_project(
         conn.execute("DELETE FROM nodes")
         conn.commit()
 
-        # Rebuild FTS5 from empty (triggers will repopulate)
-        conn.execute("INSERT INTO nodes_fts(nodes_fts) VALUES('rebuild')")
+        # Optimize for bulk load: disable fsync, use exclusive lock
+        # Must be done after commit (can't change inside transaction)
+        conn.execute("PRAGMA synchronous=OFF")
+        conn.execute("PRAGMA locking_mode=EXCLUSIVE")
 
-        # Step 2: Insert nodes
-        for node in nodes:
-            insert_node(conn, node)
+        # Drop FTS5 triggers during bulk load to avoid per-row index maintenance
+        # Rebuild FTS5 in one shot after all nodes are inserted (~100x faster)
+        conn.execute("DROP TRIGGER IF EXISTS nodes_ai")
+        conn.execute("DROP TRIGGER IF EXISTS nodes_ad")
+        conn.execute("DROP TRIGGER IF EXISTS nodes_au")
+
+        # Step 2: Batch insert nodes via executemany
+        node_rows = [
+            (
+                n.id, n.kind.value, n.name, n.qualified_name,
+                str(n.file_path), n.language.value,
+                n.start_line, n.end_line,
+                n.start_column, n.end_column,
+                n.docstring, n.signature, n.visibility, n.parent_id, "{}",
+                int(n.is_exported), int(n.is_async),
+                int(n.is_static), int(n.is_abstract),
+                n.metadata.get("content_hash", "") if n.metadata else "",
+            )
+            for n in nodes
+        ]
+        conn.executemany(
+            """
+            INSERT OR REPLACE INTO nodes
+                (id, kind, name, qualified_name, file_path, language,
+                 start_line, end_line, start_column, end_column,
+                 docstring, signature, visibility, parent_id, metadata,
+                 is_exported, is_async, is_static, is_abstract, content_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            node_rows,
+        )
         t2 = time.time()
         logger.info("Node insert: %d in %.2fs", len(nodes), t2 - t1)
 
-        # Step 3: Insert edges
-        from codemesh.db.queries import insert_file_node_dep
+        # Step 3: Batch insert edges via executemany
+        # Pre-compute cross-file deps in Python (O(n) with set lookup)
+        file_map: dict[str, str] = {}
+        for n in nodes:
+            file_map[n.id] = str(n.file_path)
+
+        edge_rows = []
+        dep_rows: list[tuple[str, str]] = []
+        seen_deps: set[tuple[str, str]] = set()
+
         for edge in edges:
-            insert_edge(conn, edge)
-            # Track cross-file dependencies for delta indexing
-            src_node = next((n for n in nodes if n.id == edge.source_id), None)
-            tgt_node = next((n for n in nodes if n.id == edge.target_id), None)
-            if src_node and tgt_node and str(src_node.file_path) != str(tgt_node.file_path):
-                insert_file_node_dep(conn, str(src_node.file_path), edge.target_id)
+            edge_rows.append((
+                edge.id, edge.source_id, edge.target_id, edge.kind.value,
+                edge.confidence, edge.weight_source, edge.line,
+                edge.column, "{}",
+                getattr(edge, "resolved_target", None) or "",
+                getattr(edge, "type_context", None) or "",
+            ))
+            src_file = file_map.get(edge.source_id)
+            tgt_file = file_map.get(edge.target_id)
+            if src_file and tgt_file and src_file != tgt_file:
+                dep_key = (src_file, edge.target_id)
+                if dep_key not in seen_deps:
+                    dep_rows.append(dep_key)
+                    seen_deps.add(dep_key)
+
+        conn.executemany(
+            """
+            INSERT OR REPLACE INTO edges
+                (id, source_id, target_id, kind, confidence,
+                 weight_source, line, column, metadata,
+                 resolved_target, type_context)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            edge_rows,
+        )
+        conn.executemany(
+            "INSERT OR IGNORE INTO file_node_deps (file_path, node_id) VALUES (?, ?)",
+            dep_rows,
+        )
         t3 = time.time()
         logger.info("Edge insert: %d in %.2fs", len(edges), t3 - t2)
 
-        # Step 4: Resolve references
+        # Step 4: Rebuild FTS5 index in one shot (vs thousands of trigger-fired inserts)
+        conn.execute("INSERT INTO nodes_fts(nodes_fts) VALUES('rebuild')")
+
+        # Step 5: Restore FTS5 triggers for future incremental inserts
+        conn.execute(
+            "CREATE TRIGGER nodes_ai AFTER INSERT ON nodes BEGIN "
+            "INSERT INTO nodes_fts(rowid, id, name, qualified_name, docstring, signature) "
+            "VALUES (NEW.rowid, NEW.id, NEW.name, NEW.qualified_name, NEW.docstring, NEW.signature); "
+            "END"
+        )
+        conn.execute(
+            "CREATE TRIGGER nodes_ad AFTER DELETE ON nodes BEGIN "
+            "INSERT INTO nodes_fts(nodes_fts, rowid, id, name, qualified_name, docstring, signature) "
+            "VALUES ('delete', OLD.rowid, OLD.id, OLD.name, OLD.qualified_name, OLD.docstring, OLD.signature); "
+            "END"
+        )
+        conn.execute(
+            "CREATE TRIGGER nodes_au AFTER UPDATE ON nodes BEGIN "
+            "INSERT INTO nodes_fts(nodes_fts, rowid, id, name, qualified_name, docstring, signature) "
+            "VALUES ('delete', OLD.rowid, OLD.id, OLD.name, OLD.qualified_name, OLD.docstring, OLD.signature); "
+            "INSERT INTO nodes_fts(rowid, id, name, qualified_name, docstring, signature) "
+            "VALUES (NEW.rowid, NEW.id, NEW.name, NEW.qualified_name, NEW.docstring, NEW.signature); "
+            "END"
+        )
+
+        # Step 6: Commit bulk inserts, then restore safe PRAGMAs
+        conn.commit()
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA locking_mode=NORMAL")
+
+        # Step 7: Resolve references
         resolver = ReferenceResolver(conn)
         resolved = resolver.resolve_all()
         t4 = time.time()
         logger.info("Resolution: %d/%d resolved in %.2fs", resolved, len(edges), t4 - t3)
 
-        # Step 5: Type inference for call edges
+        # Step 8: Type inference for call edges
         typed = resolver.resolve_call_types()
         t5 = time.time()
         logger.info("Type inference: %d/%d call edges enriched in %.2fs",

@@ -151,15 +151,16 @@ The gains scale with codebase size: on large repos the agent answers from the in
 
 ### CodeMesh Query Performance
 
-Raw FTS5 BM25 query latency on indexed codebases (measured locally, M-series Mac):
+Raw FTS5 BM25 query latency on indexed codebases (measured locally, M-series Mac, 12 queries per repo):
 
 | Codebase | Files | Nodes | Edges | Index Time | Avg Query | P99 Query |
 |----------|-------|-------|-------|------------|-----------|-----------|
-| **agentmemory** | 42 | 3,304 | 21,144 | 8s | **0.142s** | 0.247s |
-| **Excalidraw** | 628 | 9,686 | 42,660 | 98s | **0.001s** | 0.005s |
-| **Tokio** | 778 | 14,474 | 45,210 | 155s | **0.001s** | 0.006s |
+| **Excalidraw** | 628 | 9,678 | 42,644 | 2.5s | **5.0ms** | 24.9ms |
+| **Tokio** | 778 | 14,474 | 45,210 | 2.4s | **6.8ms** | 28.8ms |
+| **Django** | 3,020 | 53,155 | 472,322 | 25.1s | **36.6ms** | 287.9ms |
+| **VS Code** | 10,422 | 299,598 | 1,358,354 | 162.0s | **150.7ms** | 494.7ms |
 
-All queries hit FTS5 BM25 indexes in **under 5ms**. The graph walk expansion adds latency for multi-hop queries (callers, callees, impact analysis). Django (~3k files, ~53K nodes) and VS Code (~10k files) indexing performance was limited by edge insertion throughput (single-row INSERTs) — batch insertion is a known optimization target.
+Indexing is fully automatic — `codemesh index` handles extraction, batch insertion, FTS5 rebuild, and reference resolution. Edge insertion uses `executemany` (single prepared statement, all rows in one call) and resolution uses in-memory lookups with batch `UPDATE`, bringing Django (521K edges) from >10 minutes down to 25 seconds. Query latency scales with graph size: small repos (Excalidraw, Tokio) are single-digit milliseconds, while large repos (VS Code at 1.3M edges) are ~150ms average. All queries hit FTS5 BM25 indexes first, then expand via graph walk.
 
 ### Retrieval Quality
 
