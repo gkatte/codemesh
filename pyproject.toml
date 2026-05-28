@@ -9,7 +9,7 @@ description = "BM25 keyword search and graph walk for code intelligence"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.12"
-authors = [{name = "gkatte"}]
+authors = [{name = "CodeMesh Developer"}]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "License :: OSI Approved :: MIT License",

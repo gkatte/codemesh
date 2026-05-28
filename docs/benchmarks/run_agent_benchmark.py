@@ -203,7 +203,7 @@ def run_baseline_agent(repo_path: Path, symbol: str, extensions: list[str],
     t_grep = time.time()
     for ext in extensions:
         for f in repo_path.glob(f"**/*{ext}"):
-            skip = any(skip in str(f) for skip in [".git", "node_modules", ".codemesh", ".codegraph", "test", "tests", "vendor"])
+            skip = any(skip in str(f) for skip in [".git", "node_modules", ".codemesh", "test", "tests", "vendor"])
             if skip:
                 continue
             try:
