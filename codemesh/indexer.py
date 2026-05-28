@@ -88,6 +88,10 @@ def index_project(
         logger.info("Extraction: %d nodes, %d edges in %.2fs", len(nodes), len(edges), t1 - t0)
 
     with get_connection(db_path) as conn:
+        conn.execute("DROP TRIGGER IF EXISTS nodes_ai")
+        conn.execute("DROP TRIGGER IF EXISTS nodes_ad")
+        conn.execute("DROP TRIGGER IF EXISTS nodes_au")
+
         conn.execute("DELETE FROM nodes_fts")
         conn.execute("DELETE FROM edges")
         conn.execute("DELETE FROM nodes")
@@ -95,10 +99,6 @@ def index_project(
 
         conn.execute("PRAGMA synchronous=OFF")
         conn.execute("PRAGMA locking_mode=EXCLUSIVE")
-
-        conn.execute("DROP TRIGGER IF EXISTS nodes_ai")
-        conn.execute("DROP TRIGGER IF EXISTS nodes_ad")
-        conn.execute("DROP TRIGGER IF EXISTS nodes_au")
 
         # Batch insert nodes
         node_rows = [
