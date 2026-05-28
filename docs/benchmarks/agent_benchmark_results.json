@@ -1,0 +1,1070 @@
+{
+  "by_repo": {
+    "alamofire": {
+      "avg_token_savings_pct": 96.8,
+      "avg_call_savings_pct": 25.0,
+      "avg_time_savings_pct": 85.1,
+      "avg_cost_savings_pct": 96.0,
+      "queries": [
+        {
+          "query": "Find Session and show callers",
+          "symbol": "Session",
+          "baseline": {
+            "tokens": 154948,
+            "tool_calls": 4,
+            "time_ms": 4528.5,
+            "cost_usd": 0.470964
+          },
+          "codemesh": {
+            "tokens": 5793,
+            "tool_calls": 3,
+            "time_ms": 760.2,
+            "cost_usd": 0.021339
+          },
+          "savings": {
+            "tokens_pct": 96.3,
+            "tool_calls_pct": 25.0,
+            "time_pct": 83.2,
+            "cost_pct": 95.5
+          }
+        },
+        {
+          "query": "Where is Request defined",
+          "symbol": "Request",
+          "baseline": {
+            "tokens": 154900,
+            "tool_calls": 4,
+            "time_ms": 4516.7,
+            "cost_usd": 0.47082
+          },
+          "codemesh": {
+            "tokens": 5112,
+            "tool_calls": 3,
+            "time_ms": 701.2,
+            "cost_usd": 0.019296
+          },
+          "savings": {
+            "tokens_pct": 96.7,
+            "tool_calls_pct": 25.0,
+            "time_pct": 84.5,
+            "cost_pct": 95.9
+          }
+        },
+        {
+          "query": "Find response callers",
+          "symbol": "response",
+          "baseline": {
+            "tokens": 166482,
+            "tool_calls": 4,
+            "time_ms": 4749.2,
+            "cost_usd": 0.505566
+          },
+          "codemesh": {
+            "tokens": 5266,
+            "tool_calls": 3,
+            "time_ms": 708.8,
+            "cost_usd": 0.019758
+          },
+          "savings": {
+            "tokens_pct": 96.8,
+            "tool_calls_pct": 25.0,
+            "time_pct": 85.1,
+            "cost_pct": 96.1
+          }
+        },
+        {
+          "query": "Show DataRequest hierarchy",
+          "symbol": "DataRequest",
+          "baseline": {
+            "tokens": 175649,
+            "tool_calls": 4,
+            "time_ms": 4951.8,
+            "cost_usd": 0.533067
+          },
+          "codemesh": {
+            "tokens": 6288,
+            "tool_calls": 3,
+            "time_ms": 726.0,
+            "cost_usd": 0.022824
+          },
+          "savings": {
+            "tokens_pct": 96.4,
+            "tool_calls_pct": 25.0,
+            "time_pct": 85.3,
+            "cost_pct": 95.7
+          }
+        },
+        {
+          "query": "What imports AFError",
+          "symbol": "AFError",
+          "baseline": {
+            "tokens": 208385,
+            "tool_calls": 4,
+            "time_ms": 5587.3,
+            "cost_usd": 0.631275
+          },
+          "codemesh": {
+            "tokens": 4983,
+            "tool_calls": 3,
+            "time_ms": 706.5,
+            "cost_usd": 0.018909
+          },
+          "savings": {
+            "tokens_pct": 97.6,
+            "tool_calls_pct": 25.0,
+            "time_pct": 87.4,
+            "cost_pct": 97.0
+          }
+        }
+      ]
+    },
+    "django": {
+      "avg_token_savings_pct": 90.3,
+      "avg_call_savings_pct": 25.0,
+      "avg_time_savings_pct": 72.7,
+      "avg_cost_savings_pct": 89.3,
+      "queries": [
+        {
+          "query": "Find QuerySet and show callers",
+          "symbol": "QuerySet",
+          "baseline": {
+            "tokens": 235654,
+            "tool_calls": 4,
+            "time_ms": 6461.9,
+            "cost_usd": 0.713082
+          },
+          "codemesh": {
+            "tokens": 5272,
+            "tool_calls": 3,
+            "time_ms": 1355.5,
+            "cost_usd": 0.019776
+          },
+          "savings": {
+            "tokens_pct": 97.8,
+            "tool_calls_pct": 25.0,
+            "time_pct": 79.0,
+            "cost_pct": 97.2
+          }
+        },
+        {
+          "query": "Where is Model defined",
+          "symbol": "Model",
+          "baseline": {
+            "tokens": 104448,
+            "tool_calls": 4,
+            "time_ms": 3548.8,
+            "cost_usd": 0.319464
+          },
+          "codemesh": {
+            "tokens": 5418,
+            "tool_calls": 3,
+            "time_ms": 754.0,
+            "cost_usd": 0.020214
+          },
+          "savings": {
+            "tokens_pct": 94.8,
+            "tool_calls_pct": 25.0,
+            "time_pct": 78.8,
+            "cost_pct": 93.7
+          }
+        },
+        {
+          "query": "Find get_queryset callers",
+          "symbol": "get_queryset",
+          "baseline": {
+            "tokens": 231618,
+            "tool_calls": 4,
+            "time_ms": 6182.4,
+            "cost_usd": 0.700974
+          },
+          "codemesh": {
+            "tokens": 4841,
+            "tool_calls": 3,
+            "time_ms": 1114.6,
+            "cost_usd": 0.018483
+          },
+          "savings": {
+            "tokens_pct": 97.9,
+            "tool_calls_pct": 25.0,
+            "time_pct": 82.0,
+            "cost_pct": 97.4
+          }
+        },
+        {
+          "query": "Show middleware chain setup",
+          "symbol": "middleware",
+          "baseline": {
+            "tokens": 81010,
+            "tool_calls": 4,
+            "time_ms": 3080.7,
+            "cost_usd": 0.24915
+          },
+          "codemesh": {
+            "tokens": 5764,
+            "tool_calls": 3,
+            "time_ms": 733.5,
+            "cost_usd": 0.021252
+          },
+          "savings": {
+            "tokens_pct": 92.9,
+            "tool_calls_pct": 25.0,
+            "time_pct": 76.2,
+            "cost_pct": 91.5
+          }
+        },
+        {
+          "query": "What imports HttpResponse",
+          "symbol": "HttpResponse",
+          "baseline": {
+            "tokens": 58289,
+            "tool_calls": 4,
+            "time_ms": 2705.3,
+            "cost_usd": 0.180987
+          },
+          "codemesh": {
+            "tokens": 18669,
+            "tool_calls": 3,
+            "time_ms": 1422.2,
+            "cost_usd": 0.059967
+          },
+          "savings": {
+            "tokens_pct": 68.0,
+            "tool_calls_pct": 25.0,
+            "time_pct": 47.4,
+            "cost_pct": 66.9
+          }
+        }
+      ]
+    },
+    "excalidraw": {
+      "avg_token_savings_pct": 72.6,
+      "avg_call_savings_pct": 25.0,
+      "avg_time_savings_pct": 61.5,
+      "avg_cost_savings_pct": 72.8,
+      "queries": [
+        {
+          "query": "Find ExcalidrawElement and show callers",
+          "symbol": "ExcalidrawElement",
+          "baseline": {
+            "tokens": 85413,
+            "tool_calls": 4,
+            "time_ms": 3138.6,
+            "cost_usd": 0.262359
+          },
+          "codemesh": {
+            "tokens": 4802,
+            "tool_calls": 3,
+            "time_ms": 797.7,
+            "cost_usd": 0.018366
+          },
+          "savings": {
+            "tokens_pct": 94.4,
+            "tool_calls_pct": 25.0,
+            "time_pct": 74.6,
+            "cost_pct": 93.0
+          }
+        },
+        {
+          "query": "Where is newElement defined",
+          "symbol": "newElement",
+          "baseline": {
+            "tokens": 124829,
+            "tool_calls": 4,
+            "time_ms": 3930.0,
+            "cost_usd": 0.380607
+          },
+          "codemesh": {
+            "tokens": 5826,
+            "tool_calls": 3,
+            "time_ms": 724.0,
+            "cost_usd": 0.021438
+          },
+          "savings": {
+            "tokens_pct": 95.3,
+            "tool_calls_pct": 25.0,
+            "time_pct": 81.6,
+            "cost_pct": 94.4
+          }
+        },
+        {
+          "query": "Find restoreElements callers",
+          "symbol": "restoreElements",
+          "baseline": {
+            "tokens": 317002,
+            "tool_calls": 4,
+            "time_ms": 7743.5,
+            "cost_usd": 0.956946
+          },
+          "codemesh": {
+            "tokens": 5957,
+            "tool_calls": 3,
+            "time_ms": 771.7,
+            "cost_usd": 0.021831
+          },
+          "savings": {
+            "tokens_pct": 98.1,
+            "tool_calls_pct": 25.0,
+            "time_pct": 90.0,
+            "cost_pct": 97.7
+          }
+        },
+        {
+          "query": "Show App component hierarchy",
+          "symbol": "App",
+          "baseline": {
+            "tokens": 50635,
+            "tool_calls": 4,
+            "time_ms": 2434.2,
+            "cost_usd": 0.158025
+          },
+          "codemesh": {
+            "tokens": 4970,
+            "tool_calls": 3,
+            "time_ms": 705.9,
+            "cost_usd": 0.01887
+          },
+          "savings": {
+            "tokens_pct": 90.2,
+            "tool_calls_pct": 25.0,
+            "time_pct": 71.0,
+            "cost_pct": 88.1
+          }
+        },
+        {
+          "query": "What imports elementFromPath",
+          "symbol": "elementFromPath",
+          "baseline": {
+            "tokens": 4475,
+            "tool_calls": 4,
+            "time_ms": 686.1,
+            "cost_usd": 0.017745
+          },
+          "codemesh": {
+            "tokens": 5151,
+            "tool_calls": 3,
+            "time_ms": 753.6,
+            "cost_usd": 0.019413
+          },
+          "savings": {
+            "tokens_pct": -15.1,
+            "tool_calls_pct": 25.0,
+            "time_pct": -9.8,
+            "cost_pct": -9.4
+          }
+        }
+      ]
+    },
+    "gin": {
+      "avg_token_savings_pct": 91.9,
+      "avg_call_savings_pct": 25.0,
+      "avg_time_savings_pct": 70.6,
+      "avg_cost_savings_pct": 89.9,
+      "queries": [
+        {
+          "query": "Find Engine and show callers",
+          "symbol": "Engine",
+          "baseline": {
+            "tokens": 71363,
+            "tool_calls": 4,
+            "time_ms": 2784.4,
+            "cost_usd": 0.220029
+          },
+          "codemesh": {
+            "tokens": 5247,
+            "tool_calls": 3,
+            "time_ms": 700.2,
+            "cost_usd": 0.019701
+          },
+          "savings": {
+            "tokens_pct": 92.6,
+            "tool_calls_pct": 25.0,
+            "time_pct": 74.9,
+            "cost_pct": 91.0
+          }
+        },
+        {
+          "query": "Where is RouterGroup defined",
+          "symbol": "RouterGroup",
+          "baseline": {
+            "tokens": 36450,
+            "tool_calls": 4,
+            "time_ms": 1661.2,
+            "cost_usd": 0.11421
+          },
+          "codemesh": {
+            "tokens": 4458,
+            "tool_calls": 3,
+            "time_ms": 682.4,
+            "cost_usd": 0.017334
+          },
+          "savings": {
+            "tokens_pct": 87.8,
+            "tool_calls_pct": 25.0,
+            "time_pct": 58.9,
+            "cost_pct": 84.8
+          }
+        },
+        {
+          "query": "Find ServeHTTP callers",
+          "symbol": "ServeHTTP",
+          "baseline": {
+            "tokens": 63438,
+            "tool_calls": 4,
+            "time_ms": 2270.6,
+            "cost_usd": 0.195354
+          },
+          "codemesh": {
+            "tokens": 4786,
+            "tool_calls": 3,
+            "time_ms": 681.9,
+            "cost_usd": 0.018318
+          },
+          "savings": {
+            "tokens_pct": 92.5,
+            "tool_calls_pct": 25.0,
+            "time_pct": 70.0,
+            "cost_pct": 90.6
+          }
+        },
+        {
+          "query": "Show handler chain setup",
+          "symbol": "handler",
+          "baseline": {
+            "tokens": 74592,
+            "tool_calls": 4,
+            "time_ms": 2702.5,
+            "cost_usd": 0.229356
+          },
+          "codemesh": {
+            "tokens": 4917,
+            "tool_calls": 3,
+            "time_ms": 694.0,
+            "cost_usd": 0.018711
+          },
+          "savings": {
+            "tokens_pct": 93.4,
+            "tool_calls_pct": 25.0,
+            "time_pct": 74.3,
+            "cost_pct": 91.8
+          }
+        },
+        {
+          "query": "What imports gin.Context",
+          "symbol": "Context",
+          "baseline": {
+            "tokens": 64978,
+            "tool_calls": 4,
+            "time_ms": 2719.1,
+            "cost_usd": 0.201054
+          },
+          "codemesh": {
+            "tokens": 4487,
+            "tool_calls": 3,
+            "time_ms": 687.2,
+            "cost_usd": 0.017421
+          },
+          "savings": {
+            "tokens_pct": 93.1,
+            "tool_calls_pct": 25.0,
+            "time_pct": 74.7,
+            "cost_pct": 91.3
+          }
+        }
+      ]
+    },
+    "json": {
+      "avg_token_savings_pct": 98.9,
+      "avg_call_savings_pct": 25.0,
+      "avg_time_savings_pct": 93.3,
+      "avg_cost_savings_pct": 98.6,
+      "queries": [
+        {
+          "query": "Find parse and show callers",
+          "symbol": "parse",
+          "baseline": {
+            "tokens": 503312,
+            "tool_calls": 4,
+            "time_ms": 11414.0,
+            "cost_usd": 1.516056
+          },
+          "codemesh": {
+            "tokens": 5343,
+            "tool_calls": 3,
+            "time_ms": 758.0,
+            "cost_usd": 0.019989
+          },
+          "savings": {
+            "tokens_pct": 98.9,
+            "tool_calls_pct": 25.0,
+            "time_pct": 93.4,
+            "cost_pct": 98.7
+          }
+        },
+        {
+          "query": "Where is basic_json defined",
+          "symbol": "basic_json",
+          "baseline": {
+            "tokens": 209544,
+            "tool_calls": 4,
+            "time_ms": 5620.5,
+            "cost_usd": 0.634752
+          },
+          "codemesh": {
+            "tokens": 4375,
+            "tool_calls": 3,
+            "time_ms": 713.4,
+            "cost_usd": 0.017085
+          },
+          "savings": {
+            "tokens_pct": 97.9,
+            "tool_calls_pct": 25.0,
+            "time_pct": 87.3,
+            "cost_pct": 97.3
+          }
+        },
+        {
+          "query": "Find to_json callers",
+          "symbol": "to_json",
+          "baseline": {
+            "tokens": 739726,
+            "tool_calls": 4,
+            "time_ms": 15945.9,
+            "cost_usd": 2.224578
+          },
+          "codemesh": {
+            "tokens": 4833,
+            "tool_calls": 3,
+            "time_ms": 723.2,
+            "cost_usd": 0.018459
+          },
+          "savings": {
+            "tokens_pct": 99.3,
+            "tool_calls_pct": 25.0,
+            "time_pct": 95.5,
+            "cost_pct": 99.2
+          }
+        },
+        {
+          "query": "Show json_value hierarchy",
+          "symbol": "json_value",
+          "baseline": {
+            "tokens": 758221,
+            "tool_calls": 4,
+            "time_ms": 16176.7,
+            "cost_usd": 2.279703
+          },
+          "codemesh": {
+            "tokens": 7421,
+            "tool_calls": 3,
+            "time_ms": 784.6,
+            "cost_usd": 0.026223
+          },
+          "savings": {
+            "tokens_pct": 99.0,
+            "tool_calls_pct": 25.0,
+            "time_pct": 95.1,
+            "cost_pct": 98.8
+          }
+        },
+        {
+          "query": "What imports json_pointer",
+          "symbol": "json_pointer",
+          "baseline": {
+            "tokens": 706020,
+            "tool_calls": 4,
+            "time_ms": 15271.8,
+            "cost_usd": 2.12346
+          },
+          "codemesh": {
+            "tokens": 4679,
+            "tool_calls": 3,
+            "time_ms": 724.2,
+            "cost_usd": 0.017997
+          },
+          "savings": {
+            "tokens_pct": 99.3,
+            "tool_calls_pct": 25.0,
+            "time_pct": 95.3,
+            "cost_pct": 99.2
+          }
+        }
+      ]
+    },
+    "libuv": {
+      "avg_token_savings_pct": 71.1,
+      "avg_call_savings_pct": 25.0,
+      "avg_time_savings_pct": 69.3,
+      "avg_cost_savings_pct": 71.0,
+      "queries": [
+        {
+          "query": "Find uv_tcp_connect and show callers",
+          "symbol": "uv_tcp_connect",
+          "baseline": {
+            "tokens": 97260,
+            "tool_calls": 4,
+            "time_ms": 2976.7,
+            "cost_usd": 0.29682
+          },
+          "codemesh": {
+            "tokens": 7324,
+            "tool_calls": 3,
+            "time_ms": 800.1,
+            "cost_usd": 0.025932
+          },
+          "savings": {
+            "tokens_pct": 92.5,
+            "tool_calls_pct": 25.0,
+            "time_pct": 73.1,
+            "cost_pct": 91.3
+          }
+        },
+        {
+          "query": "Where is uv_loop_t defined",
+          "symbol": "uv_loop_t",
+          "baseline": {
+            "tokens": 38437,
+            "tool_calls": 4,
+            "time_ms": 2189.9,
+            "cost_usd": 0.121431
+          },
+          "codemesh": {
+            "tokens": 5408,
+            "tool_calls": 3,
+            "time_ms": 708.0,
+            "cost_usd": 0.020184
+          },
+          "savings": {
+            "tokens_pct": 85.9,
+            "tool_calls_pct": 25.0,
+            "time_pct": 67.7,
+            "cost_pct": 83.4
+          }
+        },
+        {
+          "query": "Find uv_run callers",
+          "symbol": "uv_run",
+          "baseline": {
+            "tokens": 15852,
+            "tool_calls": 4,
+            "time_ms": 1740.1,
+            "cost_usd": 0.053676
+          },
+          "codemesh": {
+            "tokens": 18158,
+            "tool_calls": 3,
+            "time_ms": 1006.5,
+            "cost_usd": 0.058434
+          },
+          "savings": {
+            "tokens_pct": -14.5,
+            "tool_calls_pct": 25.0,
+            "time_pct": 42.2,
+            "cost_pct": -8.9
+          }
+        },
+        {
+          "query": "Show uv_write call chain",
+          "symbol": "uv_write",
+          "baseline": {
+            "tokens": 124041,
+            "tool_calls": 4,
+            "time_ms": 3907.7,
+            "cost_usd": 0.378243
+          },
+          "codemesh": {
+            "tokens": 5495,
+            "tool_calls": 3,
+            "time_ms": 707.0,
+            "cost_usd": 0.020445
+          },
+          "savings": {
+            "tokens_pct": 95.6,
+            "tool_calls_pct": 25.0,
+            "time_pct": 81.9,
+            "cost_pct": 94.6
+          }
+        },
+        {
+          "query": "What imports uv_tcp_t",
+          "symbol": "uv_tcp_t",
+          "baseline": {
+            "tokens": 124910,
+            "tool_calls": 4,
+            "time_ms": 3924.9,
+            "cost_usd": 0.38085
+          },
+          "codemesh": {
+            "tokens": 5292,
+            "tool_calls": 3,
+            "time_ms": 730.6,
+            "cost_usd": 0.019836
+          },
+          "savings": {
+            "tokens_pct": 95.8,
+            "tool_calls_pct": 25.0,
+            "time_pct": 81.4,
+            "cost_pct": 94.8
+          }
+        }
+      ]
+    },
+    "okhttp": {
+      "avg_token_savings_pct": 79.4,
+      "avg_call_savings_pct": 25.0,
+      "avg_time_savings_pct": 65.0,
+      "avg_cost_savings_pct": 76.4,
+      "queries": [
+        {
+          "query": "Find OkHttpClient and show callers",
+          "symbol": "OkHttpClient",
+          "baseline": {
+            "tokens": 22681,
+            "tool_calls": 4,
+            "time_ms": 1887.3,
+            "cost_usd": 0.074163
+          },
+          "codemesh": {
+            "tokens": 5827,
+            "tool_calls": 3,
+            "time_ms": 726.2,
+            "cost_usd": 0.021441
+          },
+          "savings": {
+            "tokens_pct": 74.3,
+            "tool_calls_pct": 25.0,
+            "time_pct": 61.5,
+            "cost_pct": 71.1
+          }
+        },
+        {
+          "query": "Where is Interceptor defined",
+          "symbol": "Interceptor",
+          "baseline": {
+            "tokens": 33609,
+            "tool_calls": 4,
+            "time_ms": 2161.0,
+            "cost_usd": 0.106947
+          },
+          "codemesh": {
+            "tokens": 6007,
+            "tool_calls": 3,
+            "time_ms": 709.1,
+            "cost_usd": 0.021981
+          },
+          "savings": {
+            "tokens_pct": 82.1,
+            "tool_calls_pct": 25.0,
+            "time_pct": 67.2,
+            "cost_pct": 79.4
+          }
+        },
+        {
+          "query": "Find enqueue callers",
+          "symbol": "enqueue",
+          "baseline": {
+            "tokens": 44525,
+            "tool_calls": 4,
+            "time_ms": 2340.2,
+            "cost_usd": 0.139695
+          },
+          "codemesh": {
+            "tokens": 3987,
+            "tool_calls": 3,
+            "time_ms": 670.6,
+            "cost_usd": 0.015921
+          },
+          "savings": {
+            "tokens_pct": 91.0,
+            "tool_calls_pct": 25.0,
+            "time_pct": 71.3,
+            "cost_pct": 88.6
+          }
+        },
+        {
+          "query": "Show Request builder pattern",
+          "symbol": "Request",
+          "baseline": {
+            "tokens": 22681,
+            "tool_calls": 4,
+            "time_ms": 1877.5,
+            "cost_usd": 0.074163
+          },
+          "codemesh": {
+            "tokens": 5893,
+            "tool_calls": 3,
+            "time_ms": 710.1,
+            "cost_usd": 0.021639
+          },
+          "savings": {
+            "tokens_pct": 74.0,
+            "tool_calls_pct": 25.0,
+            "time_pct": 62.2,
+            "cost_pct": 70.8
+          }
+        },
+        {
+          "query": "What imports Call.Factory",
+          "symbol": "Call",
+          "baseline": {
+            "tokens": 22675,
+            "tool_calls": 4,
+            "time_ms": 1877.4,
+            "cost_usd": 0.074145
+          },
+          "codemesh": {
+            "tokens": 5583,
+            "tool_calls": 3,
+            "time_ms": 701.2,
+            "cost_usd": 0.020709
+          },
+          "savings": {
+            "tokens_pct": 75.4,
+            "tool_calls_pct": 25.0,
+            "time_pct": 62.7,
+            "cost_pct": 72.1
+          }
+        }
+      ]
+    },
+    "tokio": {
+      "avg_token_savings_pct": 80.6,
+      "avg_call_savings_pct": 25.0,
+      "avg_time_savings_pct": 62.4,
+      "avg_cost_savings_pct": 78.0,
+      "queries": [
+        {
+          "query": "Find spawn and show callers",
+          "symbol": "spawn",
+          "baseline": {
+            "tokens": 30648,
+            "tool_calls": 4,
+            "time_ms": 2035.8,
+            "cost_usd": 0.098064
+          },
+          "codemesh": {
+            "tokens": 7767,
+            "tool_calls": 3,
+            "time_ms": 905.5,
+            "cost_usd": 0.027261
+          },
+          "savings": {
+            "tokens_pct": 74.7,
+            "tool_calls_pct": 25.0,
+            "time_pct": 55.5,
+            "cost_pct": 72.2
+          }
+        },
+        {
+          "query": "Where is Runtime defined",
+          "symbol": "Runtime",
+          "baseline": {
+            "tokens": 29449,
+            "tool_calls": 4,
+            "time_ms": 2028.5,
+            "cost_usd": 0.094467
+          },
+          "codemesh": {
+            "tokens": 5301,
+            "tool_calls": 3,
+            "time_ms": 709.2,
+            "cost_usd": 0.019863
+          },
+          "savings": {
+            "tokens_pct": 82.0,
+            "tool_calls_pct": 25.0,
+            "time_pct": 65.0,
+            "cost_pct": 79.0
+          }
+        },
+        {
+          "query": "What calls block_on",
+          "symbol": "block_on",
+          "baseline": {
+            "tokens": 26640,
+            "tool_calls": 4,
+            "time_ms": 1959.2,
+            "cost_usd": 0.08604
+          },
+          "codemesh": {
+            "tokens": 6867,
+            "tool_calls": 3,
+            "time_ms": 820.3,
+            "cost_usd": 0.024561
+          },
+          "savings": {
+            "tokens_pct": 74.2,
+            "tool_calls_pct": 25.0,
+            "time_pct": 58.1,
+            "cost_pct": 71.5
+          }
+        },
+        {
+          "query": "Show Runtime hierarchy",
+          "symbol": "Runtime",
+          "baseline": {
+            "tokens": 29449,
+            "tool_calls": 4,
+            "time_ms": 2013.3,
+            "cost_usd": 0.094467
+          },
+          "codemesh": {
+            "tokens": 5301,
+            "tool_calls": 3,
+            "time_ms": 701.0,
+            "cost_usd": 0.019863
+          },
+          "savings": {
+            "tokens_pct": 82.0,
+            "tool_calls_pct": 25.0,
+            "time_pct": 65.2,
+            "cost_pct": 79.0
+          }
+        },
+        {
+          "query": "Find poll callers in tokio",
+          "symbol": "poll",
+          "baseline": {
+            "tokens": 51799,
+            "tool_calls": 4,
+            "time_ms": 2455.0,
+            "cost_usd": 0.161517
+          },
+          "codemesh": {
+            "tokens": 5083,
+            "tool_calls": 3,
+            "time_ms": 781.9,
+            "cost_usd": 0.019209
+          },
+          "savings": {
+            "tokens_pct": 90.2,
+            "tool_calls_pct": 25.0,
+            "time_pct": 68.1,
+            "cost_pct": 88.1
+          }
+        }
+      ]
+    },
+    "vscode": {
+      "avg_token_savings_pct": 92.3,
+      "avg_call_savings_pct": 25.0,
+      "avg_time_savings_pct": 14.8,
+      "avg_cost_savings_pct": 90.9,
+      "queries": [
+        {
+          "query": "Find ExtensionContext and show callers",
+          "symbol": "ExtensionContext",
+          "baseline": {
+            "tokens": 45041,
+            "tool_calls": 4,
+            "time_ms": 2450.0,
+            "cost_usd": 0.141243
+          },
+          "codemesh": {
+            "tokens": 5228,
+            "tool_calls": 3,
+            "time_ms": 4833.5,
+            "cost_usd": 0.019644
+          },
+          "savings": {
+            "tokens_pct": 88.4,
+            "tool_calls_pct": 25.0,
+            "time_pct": -97.3,
+            "cost_pct": 86.1
+          }
+        },
+        {
+          "query": "Where is TextDocument defined",
+          "symbol": "TextDocument",
+          "baseline": {
+            "tokens": 47285,
+            "tool_calls": 4,
+            "time_ms": 2381.5,
+            "cost_usd": 0.147975
+          },
+          "codemesh": {
+            "tokens": 6106,
+            "tool_calls": 3,
+            "time_ms": 839.0,
+            "cost_usd": 0.022278
+          },
+          "savings": {
+            "tokens_pct": 87.1,
+            "tool_calls_pct": 25.0,
+            "time_pct": 64.8,
+            "cost_pct": 84.9
+          }
+        },
+        {
+          "query": "Find showErrorMessage callers",
+          "symbol": "showErrorMessage",
+          "baseline": {
+            "tokens": 251415,
+            "tool_calls": 4,
+            "time_ms": 6774.8,
+            "cost_usd": 0.760365
+          },
+          "codemesh": {
+            "tokens": 5296,
+            "tool_calls": 3,
+            "time_ms": 3287.6,
+            "cost_usd": 0.019848
+          },
+          "savings": {
+            "tokens_pct": 97.9,
+            "tool_calls_pct": 25.0,
+            "time_pct": 51.5,
+            "cost_pct": 97.4
+          }
+        },
+        {
+          "query": "Show workspace configuration",
+          "symbol": "workspace",
+          "baseline": {
+            "tokens": 152292,
+            "tool_calls": 4,
+            "time_ms": 4481.4,
+            "cost_usd": 0.462996
+          },
+          "codemesh": {
+            "tokens": 5610,
+            "tool_calls": 3,
+            "time_ms": 799.2,
+            "cost_usd": 0.02079
+          },
+          "savings": {
+            "tokens_pct": 96.3,
+            "tool_calls_pct": 25.0,
+            "time_pct": 82.2,
+            "cost_pct": 95.5
+          }
+        },
+        {
+          "query": "What imports CancellationToken",
+          "symbol": "CancellationToken",
+          "baseline": {
+            "tokens": 70556,
+            "tool_calls": 4,
+            "time_ms": 2864.4,
+            "cost_usd": 0.217788
+          },
+          "codemesh": {
+            "tokens": 5616,
+            "tool_calls": 3,
+            "time_ms": 3647.5,
+            "cost_usd": 0.020808
+          },
+          "savings": {
+            "tokens_pct": 92.0,
+            "tool_calls_pct": 25.0,
+            "time_pct": -27.3,
+            "cost_pct": 90.4
+          }
+        }
+      ]
+    }
+  },
+  "grand_avg_token_savings_pct": 86.0,
+  "grand_avg_call_savings_pct": 25.0,
+  "grand_avg_time_savings_pct": 66.1,
+  "grand_avg_cost_savings_pct": 84.8
+}

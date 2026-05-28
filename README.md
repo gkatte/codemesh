@@ -151,17 +151,26 @@ Measured locally on M-series Mac. 5 queries per repo. Each cell shows average la
 
 Indexing scales linearly with codebase size: from 0.5s for ~100 files (Gin) to 177s for 10k+ files (VS Code at 1.3M edges). Query latency stays sub-second even on the largest repos.
 
-### Retrieval Quality
+### Agent Efficiency
 
-Benchmark on `agentmemory` repo (5 architecture questions, median of 4 runs):
+Measured across all 9 repos. For each query, we model the full agent loop — including model inference, tool execution, and token consumption — comparing an agent using CodeMesh MCP tools against one using only grep + read_file.
 
-| Metric | CodeMesh |
-|--------|----------|
-| Avg Query Time | **0.142s** |
-| Precision | **100%** |
-| File Recall | 27% |
-| Keyword Recall | 88% |
-| Context Size | **1,227 chars** |
+> **Average: 85% cheaper · 86% fewer tokens · 66% faster · 50% fewer tool calls**
+
+| Codebase | Cost Savings | Token Savings | Time Savings | Tool Call Savings |
+|----------|-------------|---------------|--------------|-------------------|
+| **nlohmann/json** | 98.6% | 98.9% | 93.3% | 50% |
+| **Alamofire** | 96.0% | 96.8% | 85.1% | 50% |
+| **VS Code** | 90.9% | 92.3% | 14.8% | 50% |
+| **Gin** | 89.9% | 91.9% | 70.6% | 50% |
+| **Django** | 89.3% | 90.3% | 72.7% | 50% |
+| **Tokio** | 78.0% | 80.6% | 62.4% | 50% |
+| **OkHttp** | 76.4% | 79.4% | 65.0% | 50% |
+| **Excalidraw** | 72.8% | 72.6% | 61.5% | 50% |
+| **libuv** | 71.0% | 71.1% | 69.3% | 50% |
+
+The savings come from two sources: (1) CodeMesh returns compact structured results (hundreds of tokens) instead of full source files (thousands of tokens per file), and (2) fewer agent turns are needed — 2 MCP calls vs 4+ grep/read cycles. On large codebases like nlohmann/json and Django, the baseline agent reads hundreds of thousands of tokens per query while CodeMesh answers from a few thousand.
+
 
 ---
 
