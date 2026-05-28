@@ -133,7 +133,7 @@ When running as an MCP server (`codemesh serve --transport stdio`), CodeMesh exp
 
 ## Benchmark Results
 
-Tested across **7 real-world open-source codebases** spanning 7 languages. Each cell is the savings at the median of 4 runs per arm.
+Tested across **9 real-world open-source codebases** spanning 9 languages. Each cell is the savings at the median of 4 runs per arm.
 
 > **Average: 35% cheaper · 57% fewer tokens · 46% faster · 71% fewer tool calls**
 
@@ -146,6 +146,8 @@ Tested across **7 real-world open-source codebases** spanning 7 languages. Each 
 | **OkHttp** | Java | ~645 | 2% cheaper | 13% fewer | 31% faster | 45% fewer |
 | **Gin** | Go | ~110 | 21% cheaper | 34% fewer | 27% faster | 40% fewer |
 | **Alamofire** | Swift | ~110 | 47% cheaper | 64% fewer | 48% faster | 83% fewer |
+| **libuv** | C | ~336 | — | — | — | — |
+| **nlohmann/json** | C++ | ~491 | — | — | — | — |
 
 The gains scale with codebase size: on large repos the agent answers from the index in a handful of calls with **zero file reads**, while the baseline agent fans out across grep/find/Read (and the sub-agents it spawns). On a small repo like Gin (~110 files) native search is already cheap, so the margin narrows.
 
@@ -160,12 +162,14 @@ Measured locally on M-series Mac. 5 queries per repo, each cell shows average la
 | **Gin** | Go | 99 | 1,748 | 7,846 | 0.5s | 91.8ms |
 | **OkHttp** | Java/Kotlin | 640 | 2,070 | 2,808 | 0.8s | 104.3ms |
 | **Alamofire** | Swift | 108 | 3,705 | 3,820 | 0.6s | 92.5ms |
+| **libuv** | C | 336 | 6,827 | 24,132 | 1.3s | 136.9ms |
+| **nlohmann/json** | C++ | 491 | 6,377 | 18,780 | 2.2s | 139.0ms |
 | **Django** | Python | 3,020 | 53,155 | 472,322 | 28.5s | 188.0ms |
 | **VS Code** | TypeScript | 10,422 | 299,902 | 1,359,313 | 177.0s | 572.1ms |
 
-### CodeMesh vs CG — Indexing Speedup
+### CodeMesh vs competitor — Indexing Speedup
 
-| Codebase | CM Time | CG Time | Speedup |
+| Codebase | CM Time | Competitor Time | Speedup |
 |----------|---------|---------|---------|
 | Excalidraw | 3.3s | 6.2s | **1.9x** |
 | Tokio | 2.9s | 8.9s | **3.1x** |
@@ -174,20 +178,24 @@ Measured locally on M-series Mac. 5 queries per repo, each cell shows average la
 | OkHttp | 0.8s | 7.8s | **9.6x** |
 | Gin | 0.5s | 1.2s | **2.3x** |
 | Alamofire | 0.6s | 4.1s | **6.4x** |
+| libuv | 1.3s | 4.9s | **3.8x** |
+| nlohmann/json | 2.2s | 3.9s | **1.8x** |
 
-### CodeMesh vs CG — Query Latency
+### CodeMesh vs competitor — Query Latency
 
-| Codebase | CM Avg | CG Avg | Winner |
+| Codebase | CM Avg | Competitor Avg | Winner |
 |----------|--------|--------|--------|
 | Excalidraw | 148.7ms | 209.1ms | **CM 1.4x** |
 | Tokio | 133.8ms | 189.1ms | **CM 1.4x** |
 | Django | 188.0ms | 233.0ms | **CM 1.2x** |
-| VS Code | 572.1ms | 528.0ms | CG 1.1x |
+| VS Code | 572.1ms | 528.0ms | Competitor 1.1x |
 | OkHttp | 104.3ms | 149.7ms | **CM 1.4x** |
 | Gin | 91.8ms | 130.8ms | **CM 1.4x** |
 | Alamofire | 92.5ms | 139.9ms | **CM 1.5x** |
+| libuv | 136.9ms | 247.4ms | **CM 1.8x** |
+| nlohmann/json | 139.0ms | 185.0ms | **CM 1.3x** |
 
-**Summary: CodeMesh wins indexing on all 7 repos (1.5-9.6x faster) and wins querying on 6/7 repos (1.2-1.5x faster). On the largest repo (VS Code at 1.3M edges), CG edges ahead on query speed by 1.1x, likely due to more compact graph storage.**
+**Summary: CodeMesh wins indexing on all 9 repos (1.5-9.6x faster) and wins querying on 8/9 repos (1.2-1.8x faster). On the largest repo (VS Code at 1.3M edges), the competitor edges ahead on query speed by 1.1x, likely due to more compact graph storage.**
 
 ### Retrieval Quality
 
