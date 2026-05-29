@@ -283,7 +283,7 @@ def _merge_json_file(path: Path, new_data: dict) -> dict:
 
 def install_claude(root: Path, global_config: bool = True) -> dict:
     """Configure Claude Code to use CodeMesh MCP server."""
-    result = {"claude_json": None, "claude_settings": None}
+    result = {"claude_json": None, "claude_settings": None, "mcp_json": None}
 
     if global_config:
         claude_dir = _find_claude_json_dir()
@@ -310,6 +310,27 @@ def install_claude(root: Path, global_config: bool = True) -> dict:
     merged_settings = _merge_json_file(claude_settings, _CLAUDE_PERMISSIONS)
     claude_settings.write_text(json.dumps(merged_settings, indent=2))
     result["claude_settings"] = str(claude_settings)
+
+    # Also write .mcp.json at project root — this is what Claude Code
+    # actually reads for project-level MCP server discovery.
+    mcp_json = root / ".mcp.json"
+    mcp_config = {}
+    if mcp_json.exists():
+        try:
+            mcp_config = json.loads(mcp_json.read_text())
+        except (json.JSONDecodeError, OSError):
+            mcp_config = {}
+    mcp_config.setdefault("mcpServers", {})
+    if "codemesh" not in mcp_config["mcpServers"]:
+        mcp_config["mcpServers"]["codemesh"] = {
+            "type": "stdio",
+            "command": "codemesh",
+            "args": ["serve", "--transport", "stdio"],
+        }
+        mcp_json.write_text(json.dumps(mcp_config, indent=2))
+        result["mcp_json"] = str(mcp_json)
+    else:
+        result["mcp_json"] = str(mcp_json) + " (already configured)"
 
     return result
 
