@@ -3,30 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CodeMesh — Graph Visualization</title>
+<title>CodeMesh — Graph Visualization</style>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #e2e8f0; overflow: hidden; }
 
-/* Layout: graph left, embeddings right */
-#container { display: flex; width: 100vw; height: 100vh; }
-#graph-panel { flex: 1; position: relative; }
-#embed-panel { width: 380px; border-left: 1px solid #1e293b; position: relative; display: flex; flex-direction: column; }
-#embed-header { padding: 10px 14px; border-bottom: 1px solid #1e293b; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
-#embed-header h2 { font-size: 13px; font-weight: 600; color: #94a3b8; }
-#embed-controls { display: flex; gap: 6px; align-items: center; }
-#embed-controls button { background: #1e293b; border: 1px solid #334155; color: #94a3b8; padding: 3px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; }
-#embed-controls button:hover { background: #334155; color: #e2e8f0; }
-#embed-controls button.active { background: #3b82f6; color: #fff; border-color: #3b82f6; }
-#embed-chart { flex: 1; min-height: 0; }
-#embed-stats { padding: 8px 14px; border-top: 1px solid #1e293b; font-size: 11px; color: #64748b; flex-shrink: 0; }
-
-#cy { width: 100%; height: 100%; }
+#cy { width: 100vw; height: 100vh; }
 
 /* Toolbar */
 #toolbar { position: absolute; top: 12px; left: 12px; z-index: 10; display: flex; gap: 6px; align-items: center; }
 #toolbar input, #toolbar select { background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 6px 10px; border-radius: 6px; font-size: 13px; }
-#toolbar input { width: 180px; }
+#toolbar input { width: 200px; }
 #toolbar input:focus { outline: none; border-color: #3b82f6; }
 #toolbar button { background: #3b82f6; border: none; color: #fff; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; }
 #toolbar button:hover { background: #2563eb; }
@@ -34,255 +21,270 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 #toolbar button.secondary:hover { background: #334155; color: #e2e8f0; }
 
 /* Detail sidebar */
-#detail { position: absolute; top: 12px; right: 12px; width: 300px; background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 14px; display: none; z-index: 10; max-height: 80vh; overflow-y: auto; }
-#detail h3 { font-size: 14px; margin-bottom: 8px; color: #93c5fd; }
+#detail { position: absolute; top: 12px; right: 12px; width: 320px; background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 14px; display: none; z-index: 10; max-height: 80vh; overflow-y: auto; }
+#detail h3 { font-size: 14px; margin-bottom: 8px; color: #93c5fd; word-break: break-all; }
 #detail .close { position: absolute; top: 8px; right: 12px; cursor: pointer; color: #94a3b8; font-size: 18px; }
 #detail .close:hover { color: #e2e8f0; }
 #detail .field { margin-bottom: 8px; }
 #detail .label { font-size: 10px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
 #detail .value { font-size: 12px; word-break: break-all; }
-#detail .docstring { font-family: monospace; font-size: 11px; background: #0f172a; padding: 8px; border-radius: 4px; white-space: pre-wrap; margin-top: 4px; max-height: 200px; overflow-y: auto; }
+#detail code { font-family: monospace; font-size: 11px; background: #0f172a; padding: 8px; border-radius: 4px; white-space: pre-wrap; margin-top: 4px; max-height: 200px; overflow-y: auto; display: block; }
 
 /* Stats & Legend */
 #stats { position: absolute; bottom: 12px; left: 12px; z-index: 10; font-size: 11px; color: #64748b; }
-#legend { position: absolute; bottom: 12px; right: 12px; z-index: 10; background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 8px 12px; font-size: 11px; }
-#legend .item { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
-#legend .swatch { width: 10px; height: 10px; border-radius: 2px; }
+#legend { position: absolute; bottom: 12px; right: 12px; z-index: 10; background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 10px 14px; font-size: 11px; }
+#legend .item { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+#legend .swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+#legend .edge-line { width: 14px; height: 2px; flex-shrink: 0; }
 
-/* Theme toggle */
+/* Loading overlay */
+#loading { position: absolute; inset: 0; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #0f172a; gap: 12px; }
+#loading .spinner { width: 32px; height: 32px; border: 3px solid #1e293b; border-top-color: #3b82f6; border-radius: 50%; animation: spin 0.8s linear infinite; }
+#loading .msg { font-size: 13px; color: #64748b; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Light theme */
 body.light { background: #f8fafc; color: #1e293b; }
 body.light #toolbar input, body.light #toolbar select { background: #fff; border-color: #cbd5e1; color: #1e293b; }
 body.light #detail { background: #fff; border-color: #cbd5e1; }
 body.light #legend { background: #fff; border-color: #cbd5e1; }
 body.light #stats { color: #94a3b8; }
-body.light #embed-panel { border-left-color: #e2e8f0; }
-body.light #embed-header { border-bottom-color: #e2e8f0; }
-body.light #embed-stats { border-top-color: #e2e8f0; }
-
-/* Export button */
-#export-btn { position: absolute; top: 12px; right: 12px; z-index: 11; }
+#detail .section-title { font-size: 11px; color: #94a3b8; font-weight: 600; margin: 10px 0 4px; border-top: 1px solid #334155; padding-top: 8px; }
+#detail .btn-row { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+#detail .btn-row button { background: #334155; border: 1px solid #475569; color: #e2e8f0; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; }
+#detail .btn-row button:hover { background: #475569; }
 </style>
 </head>
 <body>
 
-<div id="container">
-  <div id="graph-panel">
-    <div id="toolbar">
-      <input type="text" id="search" placeholder="Search symbols... (Enter)" />
-      <select id="kindFilter"><option value="">All kinds</option></select>
-      <select id="langFilter"><option value="">All languages</option></select>
-      <button onclick="refresh()">Go</button>
-      <button class="secondary" onclick="reset()">Reset</button>
-      <button class="secondary" onclick="fit()">Fit</button>
-      <button class="secondary" id="theme-btn" onclick="toggleTheme()">☀️</button>
-    </div>
+<div id="loading"><div class="spinner"></div><div class="msg">Loading graph…</div></div>
 
-    <div id="detail">
-      <span class="close" onclick="closeDetail()">&times;</span>
-      <h3 id="detailName"></h3>
-      <div class="field"><div class="label">Kind</div><div class="value" id="detailKind"></div></div>
-      <div class="field"><div class="label">Qualified Name</div><div class="value" id="detailQName"></div></div>
-      <div class="field"><div class="label">File</div><div class="value" id="detailFile"></div></div>
-      <div class="field"><div class="label">Line</div><div class="value" id="detailLine"></div></div>
-      <div class="field"><div class="label">Signature</div><div class="value" id="detailSig" style="font-family:monospace"></div></div>
-      <div class="field"><div class="label">Docstring</div><div class="docstring" id="detailDoc"></div></div>
-    </div>
+<div id="toolbar">
+  <input type="text" id="search" placeholder="Search symbols… (Enter or /)" />
+  <select id="kindFilter"><option value="">All kinds</option></select>
+  <select id="langFilter"><option value="">All languages</option></select>
+  <button onclick="refresh()">Go</button>
+  <button class="secondary" onclick="reset()">Reset</button>
+  <button class="secondary" onclick="fit()">Fit</button>
+  <button class="secondary" id="export-btn" onclick="exportGraphSVG()" title="Export SVG">⬇</button>
+</div>
 
-    <div id="stats"></div>
-
-    <div id="legend">
-      <div class="item"><div class="swatch" style="background:#3b82f6"></div>function</div>
-      <div class="item"><div class="swatch" style="background:#22c55e"></div>class</div>
-      <div class="item"><div class="swatch" style="background:#8b5cf6"></div>method</div>
-      <div class="item"><div class="swatch" style="background:#6b7280"></div>module</div>
-      <div class="item"><div class="swatch" style="background:#f59e0b"></div>calls</div>
-      <div class="item"><div class="swatch" style="background:#ef4444"></div>imports</div>
-      <div class="item"><div class="swatch" style="background:#a855f7"></div>extends</div>
-    </div>
-
-    <div id="cy"></div>
-  </div>
-
-  <div id="embed-panel">
-    <div id="embed-header">
-      <h2>Embedding Space</h2>
-      <div id="embed-controls">
-        <button id="btn-2d" class="active" onclick="setDims(2)">2D</button>
-        <button id="btn-3d" onclick="setDims(3)">3D</button>
-        <button onclick="exportEmbedPNG()">📷</button>
-      </div>
-    </div>
-    <div id="embed-chart"></div>
-    <div id="embed-stats"></div>
+<div id="detail">
+  <span class="close" onclick="closeDetail()">&times;</span>
+  <h3 id="detailName"></h3>
+  <div class="field"><div class="label">Kind</div><div class="value" id="detailKind"></div></div>
+  <div class="field"><div class="label">Qualified Name</div><div class="value" id="detailQName"></div></div>
+  <div class="field"><div class="label">File</div><div class="value" id="detailFile"></div></div>
+  <div class="field"><div class="label">Line</div><div class="value" id="detailLine"></div></div>
+  <div class="field"><div class="label">Signature</div><code id="detailSig"></code></div>
+  <div class="field"><div class="label">Docstring</div><code id="detailDoc"></code></div>
+  <div class="btn-row">
+    <button onclick="focusNeighbors()">Neighbors</button>
+    <button onclick="focusComponent()">Component</button>
   </div>
 </div>
 
+<div id="stats"></div>
+
+<div id="legend">
+  <div class="section-title" style="margin:0 0 6px;border:none;padding:0;color:#94a3b8;font-size:10px;">Node Kinds</div>
+  <div class="item"><div class="swatch" style="background:#3b82f6"></div>function</div>
+  <div class="item"><div class="swatch" style="background:#22c55e"></div>class</div>
+  <div class="item"><div class="swatch" style="background:#8b5cf6"></div>method</div>
+  <div class="item"><div class="swatch" style="background:#6b7280"></div>module / file</div>
+  <div class="item"><div class="swatch" style="background:#f97316"></div>variable</div>
+  <div class="section-title" style="margin:8px 0 4px;color:#94a3b8;font-size:10px;">Edge Kinds</div>
+  <div class="item"><div class="edge-line" style="background:#f59e0b"></div>calls</div>
+  <div class="item"><div class="edge-line" style="background:#ef4444"></div>imports</div>
+  <div class="item"><div class="edge-line" style="background:#a855f7"></div>extends / impl</div>
+</div>
+
+<div id="cy"></div>
+
 <script src="https://unpkg.com/cytoscape@3.30.0/dist/cytoscape.min.js"></script>
-<script src="https://unpkg.com/layout-base@2.0.1/layout-base.js"></script>
-<script src="https://unpkg.com/cytoscape-cola@2.5.1/cytoscape-cola.js"></script>
-<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 
 <script>
-const NODE_COLORS = { function: '#3b82f6', class: '#22c55e', module: '#6b7280', method: '#8b5cf6', variable: '#f97316', interface: '#06b6d4', type_alias: '#ec4899', enum: '#14b8a6', struct: '#14b8a6', constant: '#f59e0b', decorator: '#a855f7', parameter: '#64748b', property: '#06b6d4', trait: '#14b8a6', file: '#6b7280', import: '#ef4444', unknown: '#94a3b8' };
-const EDGE_COLORS = { calls: '#f59e0b', imports: '#ef4444', extends: '#a855f7', contains: '#475569', implements: '#a855f7', references: '#64748b', instantiates: '#8b5cf6', returns: '#22c55e', type_of: '#06b6d4', overrides: '#8b55f7', exports: '#22c55e', decorates: '#a855f7' };
+const NODE_COLORS = { function: '#3b82f6', class: '#22c55e', module: '#6b7280', method: '#8b5cf6', variable: '#f97316', interface: '#06b6d4', type_alias: '#ec4899', enum: '#14b8a6', struct: '#14b8a6', constant: '#f59e0b', decorator: '#a855f7', parameter: '#64748b', property: '#06b6d4', trait: '#14b8a6', file: '#475569', import: '#ef4444', unknown: '#94a3b8' };
 
 let cy;
-let embedData = [];
-let currentDims = 2;
-let isDark = true;
+let allNodes = [];
+let allEdges = [];
 
-cytoscape.use(window.cytoscapeCola);
+function hideLoading() {
+  const el = document.getElementById('loading');
+  if (el) el.style.display = 'none';
+}
 
-async function init() {
-  await Promise.all([initGraph(), initEmbeddings()]);
+function showError(msg) {
+  hideLoading();
+  const el = document.getElementById('loading');
+  if (el) {
+    el.style.display = 'flex';
+    el.innerHTML = `<div style="color:#ef4444;font-size:13px;text-align:center;padding:20px;">⚠ ${msg}</div>`;
+  }
+}
+
+async function fetchJSON(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${url}`);
+  return r.json();
+}
+
+function buildElements(graph) {
+  // Filter out file nodes for cleaner visualization, keep them for stats
+  const visibleNodes = graph.nodes.filter(n => n.data.kind !== 'file');
+  const visibleIds = new Set(visibleNodes.map(n => n.data.id));
+  const visibleEdges = graph.edges.filter(e => visibleIds.has(e.data.source) && visibleIds.has(e.data.target));
+  // Also filter out "contains" edges which are just structural
+  const renderEdges = visibleEdges.filter(e => e.data.kind !== 'contains');
+  return {
+    nodes: visibleNodes.map(n => ({ data: { ...n.data, id: n.data.id } })),
+    edges: renderEdges.map(e => ({ data: { ...e.data, id: e.data.id || (e.data.source + '->' + e.data.target), source: e.data.source, target: e.data.target } })),
+  };
+}
+
+function initCytoscape(elements) {
+  cy = cytoscape({
+    container: document.getElementById('cy'),
+    elements: elements,
+    style: [
+      {
+        selector: 'node',
+        style: {
+          'background-color': ele => NODE_COLORS[ele.data('kind')] || '#94a3b8',
+          'label': 'data(name)',
+          'width': ele => Math.max(16, Math.min(40, (ele.data('degree') || 1) * 4 + 12)),
+          'height': ele => Math.max(16, Math.min(40, (ele.data('degree') || 1) * 4 + 12)),
+          'font-size': 8,
+          'color': '#e2e8f0',
+          'text-valign': 'bottom',
+          'text-halign': 'center',
+          'text-margin-y': 5,
+          'text-background-color': '#1e293b',
+          'text-background-opacity': 0.8,
+          'text-background-padding': 2,
+          'border-width': 0,
+        }
+      },
+      {
+        selector: 'edge',
+        style: {
+          'width': 0.8,
+          'line-color': '#334155',
+          'target-arrow-color': '#475569',
+          'target-arrow-shape': 'triangle',
+          'curve-style': 'bezier',
+          'arrow-scale': 0.6,
+          'opacity': 0.3,
+        }
+      },
+      {
+        selector: 'node:selected',
+        style: {
+          'border-width': 2,
+          'border-color': '#3b82f6',
+          'background-color': '#3b82f6',
+        }
+      }
+    ],
+    layout: {
+      name: 'cose',
+      idealEdgeLength: 80,
+      nodeOverlap: 20,
+      padding: 30,
+      animate: true,
+      animationDuration: 800,
+      randomize: false,
+    },
+  });
+
+  // Click node → show detail
+  cy.on('tap', 'node', async evt => {
+    const nodeId = evt.target.id();
+    try {
+      const detail = await fetchJSON(`/api/node/${nodeId}`);
+      showDetail(detail);
+    } catch (e) { /* ignore */ }
+  });
+
+  // Click background → close detail
+  cy.on('tap', evt => { if (evt.target === cy) closeDetail(); });
+
+  // Double-click → focus subgraph
+  cy.on('dbltap', 'node', evt => {
+    const node = evt.target;
+    cy.elements().unselect();
+    node.neighborhood().selectAll();
+  });
 }
 
 async function initGraph() {
-  const graph = await fetch('/api/graph').then(r => r.json());
-  cy = cytoscape({
-    container: document.getElementById('cy'),
-    elements: { nodes: graph.nodes, edges: graph.edges },
-    style: [
-      { selector: 'node', style: { 'background-color': ele => NODE_COLORS[ele.data('kind')] || '#94a3b8', 'label': 'data(name)', 'width': 24, 'height': 24, 'font-size': 8, 'color': '#e2e8f0', 'text-valign': 'bottom', 'text-halign': 'center', 'text-margin-y': 4, 'text-background-color': '#1e293b', 'text-background-opacity': 0.7, 'text-background-padding': 1 }
-      },
-      { selector: 'edge', style: { 'width': 1, 'line-color': ele => EDGE_COLORS[ele.data('kind')] || '#475569', 'target-arrow-color': ele => EDGE_COLORS[ele.data('kind')] || '#475569', 'target-arrow-shape': 'triangle', 'curve-style': 'bezier', 'arrow-scale': 0.7, 'opacity': 0.4 }
-      }
-    ],
-    layout: { name: 'cola', infinite: true, fit: false, padding: 10, nodeSpacing: 30, edgeLength: 100, avoidOverlap: true, randomize: false }
-  });
-
-  cy.on('tap', 'node', async evt => {
-    const nodeId = evt.target.id();
-    const detail = await fetch(`/api/node/${nodeId}`).then(r => r.json());
-    showDetail(detail);
-    // Highlight in embedding plot
-    highlightEmbedNode(nodeId);
-  });
-
-  cy.on('tap', evt => { if (evt.target === cy) closeDetail(); });
-  document.getElementById('search').addEventListener('keydown', e => { if (e.key === 'Enter') refresh(); });
-
-  // Populate filter dropdowns
-  const kinds = [...new Set(graph.nodes.map(n => n.data.kind))].sort();
-  const langs = [...new Set(graph.nodes.map(n => n.data.language))].sort();
-  kinds.forEach(k => { const o = document.createElement('option'); o.value = k; o.textContent = k; document.getElementById('kindFilter').appendChild(o); });
-  langs.forEach(l => { const o = document.createElement('option'); o.value = l; o.textContent = l; document.getElementById('langFilter').appendChild(o); });
-
-  const stats = await fetch('/api/stats').then(r => r.json());
-  document.getElementById('stats').textContent = `${stats.total_nodes} nodes, ${stats.total_edges} edges`;
-}
-
-async function initEmbeddings() {
   try {
-    const stats = await fetch('/api/embedding-stats').then(r => r.json());
-    if (stats.embedded_nodes === 0) {
-      document.getElementById('embed-stats').textContent = 'No embeddings indexed. Run embedding model first.';
-      document.getElementById('embed-chart').innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#64748b;font-size:12px;">No embedding data</div>';
-      return;
-    }
-    embedData = await fetch(`/api/embeddings?dims=${currentDims}`).then(r => r.json());
-    document.getElementById('embed-stats').textContent = `${stats.embedded_nodes} embedded / ${stats.total_nodes} total · model: ${stats.model}`;
-    renderEmbeddings();
+    const graph = await fetchJSON('/api/graph?depth=2');
+    hideLoading();
+
+    allNodes = graph.nodes;
+    allEdges = graph.edges;
+
+    const elements = buildElements(graph);
+    initCytoscape(elements);
+
+    // Populate filter dropdowns
+    const kinds = [...new Set(allNodes.map(n => n.data.kind))].sort();
+    const langs = [...new Set(allNodes.map(n => n.data.language).filter(Boolean))].sort();
+    kinds.forEach(k => { const o = document.createElement('option'); o.value = k; o.textContent = k; document.getElementById('kindFilter').appendChild(o); });
+    langs.forEach(l => { const o = document.createElement('option'); o.value = l; o.textContent = l; document.getElementById('langFilter').appendChild(l); });
+
+    // Stats
+    const stats = await fetchJSON('/api/stats');
+    document.getElementById('stats').textContent = `${stats.total_nodes.toLocaleString()} nodes · ${stats.total_edges.toLocaleString()} edges`;
+
   } catch (e) {
-    document.getElementById('embed-stats').textContent = 'Embedding data unavailable';
+    showError(`Failed to load graph: ${e.message}`);
   }
 }
 
-function renderEmbeddings() {
-  if (!embedData.length) return;
-
-  // Group by kind for traces
-  const byKind = {};
-  for (const p of embedData) {
-    const k = p.kind || 'unknown';
-    if (!byKind[k]) byKind[k] = [];
-    byKind[k].push(p);
-  }
-
-  const colors = NODE_COLORS;
-  const traces = Object.entries(byKind).map(([kind, points]) => {
-    const is3d = currentDims === 3 && points[0].z !== undefined;
-    const base = {
-      name: kind,
-      mode: 'markers',
-      text: points.map(p => `${p.name}<br>${p.file_path}<br>degree: ${p.degree}`),
-      hoverinfo: 'text',
-      marker: { size: points.map(p => Math.max(4, Math.min(12, p.degree || 1))), color: colors[kind] || '#94a3b8', opacity: 0.8 },
-    };
-    if (is3d) {
-      return { ...base, type: 'scatter3d', x: points.map(p => p.x), y: points.map(p => p.y), z: points.map(p => p.z) };
-    }
-    return { ...base, type: 'scattergl', x: points.map(p => p.x), y: points.map(p => p.y) };
-  });
-
-  const is3d = currentDims === 3;
-  const layout = {
-    paper_bgcolor: isDark ? '#0f172a' : '#f8fafc',
-    plot_bgcolor: isDark ? '#0f172a' : '#f8fafc',
-    margin: { l: 0, r: 0, t: 0, b: 0 },
-    showlegend: true,
-    legend: { font: { size: 9, color: isDark ? '#94a3b8' : '#64748b' }, itemsizing: 'constant' },
-    hoverlabel: { bgcolor: isDark ? '#1e293b' : '#fff', font: { size: 11, color: isDark ? '#e2e8f0' : '#1e293b' } },
-  };
-
-  if (is3d) {
-    layout.scene = {
-      xaxis: { showgrid: false, zeroline: false, showticklabels: false, backgroundcolor: isDark ? '#0f172a' : '#f8fafc' },
-      yaxis: { showgrid: false, zeroline: false, showticklabels: false, backgroundcolor: isDark ? '#0f172a' : '#f8fafc' },
-      zaxis: { showgrid: false, zeroline: false, showticklabels: false, backgroundcolor: isDark ? '#0f172a' : '#f8fafc' },
-      camera: { eye: { x: 1.5, y: 1.5, z: 1.5 } },
-    };
-  } else {
-    layout.xaxis = { showgrid: false, zeroline: false, showticklabels: false, gridcolor: isDark ? '#1e293b' : '#e2e8f0' };
-    layout.yaxis = { showgrid: false, zeroline: false, showticklabels: false, gridcolor: isDark ? '#1e293b' : '#e2e8f0' };
-  }
-
-  const config = { responsive: true, displayModeBar: false };
-  Plotly.newPlot('embed-chart', traces, layout, config);
-
-  // Cross-link: click embedding point → highlight in graph
-  document.getElementById('embed-chart').on('plotly_click', evt => {
-    const idx = evt.points[0].pointIndex;
-    const kind = evt.points[0].data.name;
-    const node = byKind[kind][idx];
-    if (node && cy) {
-      const cyNode = cy.getElementById(node.id);
-      if (cyNode.length) {
-        cy.elements().unselect();
-        cyNode.select();
-        cy.center(cyNode);
-        fetch(`/api/node/${node.id}`).then(r => r.json()).then(showDetail);
-      }
-    }
-  });
+function showDetail(d) {
+  document.getElementById('detailName').textContent = d.name;
+  document.getElementById('detailKind').textContent = d.kind;
+  document.getElementById('detailQName').textContent = d.qualified_name || '—';
+  document.getElementById('detailFile').textContent = d.file_path || '—';
+  document.getElementById('detailLine').textContent = (d.start_line && d.end_line) ? `L${d.start_line}–L${d.end_line}` : '—';
+  document.getElementById('detailSig').textContent = d.signature || '—';
+  document.getElementById('detailDoc').textContent = d.docstring || '—';
+  document.getElementById('detail').style.display = 'block';
 }
 
-function highlightEmbedNode(nodeId) {
-  const chart = document.getElementById('embed-chart');
-  if (!chart.data) return;
-  // Find which trace and index this node is in
-  for (let t = 0; t < chart.data.length; t++) {
-    const trace = chart.data[t];
-    const idx = embedData.findIndex(d => d.id === nodeId && d.kind === trace.name);
-    if (idx >= 0) {
-      Plotly.restyle(chart, { 'marker.opacity': chart.data.map((_, i) => i === t ? 0.4 : 0.1) }, [t]);
-      setTimeout(() => { Plotly.restyle(chart, { 'marker.opacity': 0.8 }, [t]); }, 1500);
-      break;
-    }
-  }
+function closeDetail() { document.getElementById('detail').style.display = 'none'; }
+
+async function refresh() {
+  const params = new URLSearchParams();
+  const kind = document.getElementById('kindFilter').value;
+  const lang = document.getElementById('langFilter').value;
+  const search = document.getElementById('search').value.trim();
+  if (kind) params.append('kind', kind);
+  if (lang) params.append('language', lang);
+  if (search) params.append('symbol', search);
+  params.append('depth', '3');
+
+  try {
+    const graph = await fetchJSON(`/api/graph?${params}`);
+    if (!cy) return;
+    cy.elements().remove();
+    const elements = buildElements(graph);
+    cy.add([...elements.nodes, ...elements.edges]);
+    cy.layout({ name: 'cose', idealEdgeLength: 80, nodeOverlap: 20, padding: 30, animate: true, animationDuration: 600 }).run();
+  } catch (e) { /* ignore */ }
 }
 
-async function setDims(dims) {
-  currentDims = dims;
-  document.getElementById('btn-2d').classList.toggle('active', dims === 2);
-  document.getElementById('btn-3d').classList.toggle('active', dims === 3);
-  embedData = await fetch(`/api/embeddings?dims=${dims}`).then(r => r.json());
-  renderEmbeddings();
+function reset() {
+  document.getElementById('kindFilter').value = '';
+  document.getElementById('langFilter').value = '';
+  document.getElementById('search').value = '';
+  refresh();
 }
 
-function exportEmbedPNG() {
-  Plotly.downloadImage('embed-chart', { format: 'png', width: 1200, height: 800, filename: 'codemesh-embeddings' });
-}
+function fit() { if (cy) cy.fit(); }
 
 function exportGraphSVG() {
   if (!cy) return;
@@ -294,49 +296,52 @@ function exportGraphSVG() {
   URL.revokeObjectURL(url);
 }
 
-function toggleTheme() {
-  isDark = !isDark;
-  document.body.classList.toggle('light', !isDark);
-  document.getElementById('theme-btn').textContent = isDark ? '☀️' : '🌙';
-  renderEmbeddings();
+function focusNeighbors() {
+  if (!cy) return;
+  const selected = cy.$(':selected');
+  if (!selected.length) return;
+  const neighborhood = selected.neighborhood();
+  cy.elements().unselect().style('opacity', 0.15);
+  neighborhood.select();
+  neighborhood.style('opacity', 1);
+  cy.fit(neighborhood, 30);
 }
 
-function fit() { if (cy) cy.fit(); }
-
-async function refresh() {
-  const params = new URLSearchParams();
-  const kind = document.getElementById('kindFilter').value;
-  const lang = document.getElementById('langFilter').value;
-  const search = document.getElementById('search').value.trim();
-  if (kind) params.append('kind', kind);
-  if (lang) params.append('language', lang);
-  if (search) params.append('symbol', search);
-  params.append('depth', '3');
-  const graph = await fetch(`/api/graph?${params}`).then(r => r.json());
-  cy.elements().remove();
-  cy.add([...graph.nodes, ...graph.edges]);
-  cy.layout({ name: 'cola', infinite: true, fit: false, padding: 10, nodeSpacing: 30, edgeLength: 100, avoidOverlap: true, randomize: false }).run();
+function focusComponent() {
+  if (!cy) return;
+  const selected = cy.$(':selected');
+  if (!selected.length) return;
+  // BFS to find connected component
+  const visited = new Set();
+  const queue = [selected[0].id()];
+  while (queue.length) {
+    const id = queue.pop();
+    if (visited.has(id)) continue;
+    visited.add(id);
+    const n = cy.getElementById(id);
+    if (n.length) {
+      n.neighborhood('node').forEach(ne => {
+        if (!visited.has(ne.id())) queue.push(ne.id());
+      });
+    }
+  }
+  const component = cy.nodes().filter(n => visited.has(n.id()));
+  cy.elements().unselect().style('opacity', 0.15);
+  component.select();
+  component.style('opacity', 1);
+  cy.fit(component, 30);
 }
 
-function reset() {
-  document.getElementById('kindFilter').value = '';
-  document.getElementById('langFilter').value = '';
-  document.getElementById('search').value = '';
-  refresh();
+function highlightNodes(ids) {
+  if (!cy || !ids.length) return;
+  cy.elements().unselect().style('opacity', 0.15);
+  const selected = cy.nodes().filter(n => ids.includes(n.id()));
+  selected.select();
+  selected.style('opacity', 1);
+  const connected = selected.connectedEdges();
+  connected.style('opacity', 0.6);
+  cy.fit(selected, 50);
 }
-
-function showDetail(d) {
-  document.getElementById('detailName').textContent = d.name;
-  document.getElementById('detailKind').textContent = d.kind;
-  document.getElementById('detailQName').textContent = d.qualified_name;
-  document.getElementById('detailFile').textContent = d.file_path;
-  document.getElementById('detailLine').textContent = `L${d.start_line}–${d.end_line}`;
-  document.getElementById('detailSig').textContent = d.signature || '—';
-  document.getElementById('detailDoc').textContent = d.docstring || '—';
-  document.getElementById('detail').style.display = 'block';
-}
-
-function closeDetail() { document.getElementById('detail').style.display = 'none'; }
 
 // Keyboard shortcuts
 document.addEventListener('keydown', e => {
@@ -353,7 +358,12 @@ document.addEventListener('keydown', e => {
   }
 });
 
-init();
+document.getElementById('search').addEventListener('keydown', e => {
+  if (e.key === 'Enter') refresh();
+});
+
+// Start
+initGraph();
 </script>
 </body>
 </html>
