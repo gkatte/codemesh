@@ -170,12 +170,14 @@ wheels = [
 
 [[package]]
 name = "codemesh"
-version = "0.1.2"
+version = "0.1.7"
 source = { editable = "." }
 dependencies = [
+    { name = "fastapi" },
     { name = "mcp" },
     { name = "rapidfuzz" },
     { name = "rich" },
+    { name = "starlette" },
     { name = "tree-sitter" },
     { name = "tree-sitter-c" },
     { name = "tree-sitter-cpp" },
@@ -187,6 +189,7 @@ dependencies = [
     { name = "tree-sitter-swift" },
     { name = "tree-sitter-typescript" },
     { name = "typer" },
+    { name = "uvicorn" },
     { name = "watchdog" },
 ]
 
@@ -200,6 +203,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "fastapi", specifier = ">=0.115" },
     { name = "mcp", specifier = ">=1.1" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.13" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3" },
@@ -207,6 +211,7 @@ requires-dist = [
     { name = "rapidfuzz", specifier = ">=3.14" },
     { name = "rich", specifier = ">=13.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8" },
+    { name = "starlette", specifier = ">=0.45" },
     { name = "tree-sitter", specifier = ">=0.25" },
     { name = "tree-sitter-c", specifier = ">=0.23" },
     { name = "tree-sitter-cpp", specifier = ">=0.23" },
@@ -218,6 +223,7 @@ requires-dist = [
     { name = "tree-sitter-swift", specifier = ">=0.5" },
     { name = "tree-sitter-typescript", specifier = ">=0.23" },
     { name = "typer", specifier = ">=0.12" },
+    { name = "uvicorn", specifier = ">=0.34" },
     { name = "watchdog", specifier = ">=6.0" },
 ]
 provides-extras = ["dev"]
@@ -366,6 +372,22 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/1e/75/a2e55f99c16fcac7b5d6c1eb19ad8e00799854d6be5ca845f9259eae1681/cryptography-48.0.0-cp39-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:a5da777e32ffed6f85a7b2b3f7c5cbc88c146bfcd0a1d7baf5fcc6c52ee35dd4", size = 4960575, upload-time = "2026-05-04T22:59:09.851Z" },
     { url = "https://files.pythonhosted.org/packages/b8/23/6e6f32143ab5d8b36ca848a502c4bcd477ae75b9e1677e3530d669062578/cryptography-48.0.0-cp39-abi3-win32.whl", hash = "sha256:77a2ccbbe917f6710e05ba9adaa25fb5075620bf3ea6fb751997875aff4ae4bd", size = 3279117, upload-time = "2026-05-04T22:59:12.019Z" },
     { url = "https://files.pythonhosted.org/packages/9d/9a/0fea98a70cf1749d41d738836f6349d97945f7c89433a259a6c2642eefeb/cryptography-48.0.0-cp39-abi3-win_amd64.whl", hash = "sha256:16cd65b9330583e4619939b3a3843eec1e6e789744bb01e7c7e2e62e33c239c8", size = 3792100, upload-time = "2026-05-04T22:59:14.884Z" },
+]
+
+[[package]]
+name = "fastapi"
+version = "0.136.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "annotated-doc" },
+    { name = "pydantic" },
+    { name = "starlette" },
+    { name = "typing-extensions" },
+    { name = "typing-inspection" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/81/2d/ff8d91d7b564d464629a0fd50a4489c97fcb836ac230bf3a7269232a9b1f/fastapi-0.136.3.tar.gz", hash = "sha256:e487fae93ad408e6f47641ee4dfe389864fd7bec92e547ea8498fc13f43e83ab", size = 396410, upload-time = "2026-05-23T18:53:15.192Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e0/82/45359b62a067409bd929ae8a56b8ed13e5a8c8a61194b3c236920999ab83/fastapi-0.136.3-py3-none-any.whl", hash = "sha256:3d2a69bdf04b7e9f3afa292c3bc7a98816bbfafa10bc9b45f3f3700d2f761620", size = 117481, upload-time = "2026-05-23T18:53:16.924Z" },
 ]
 
 [[package]]
