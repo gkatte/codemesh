@@ -9,6 +9,8 @@ from pathlib import Path
 
 import typer
 
+from codemesh.cli.init import _CLAUDE_MD_TEMPLATE, _CODEX_TEMPLATE, _CURSOR_RULES_TEMPLATE
+
 logger = logging.getLogger(__name__)
 
 _CLAUDE_MCP_CONFIG = {
@@ -318,29 +320,108 @@ def detect_agents() -> list[str]:
     return agents
 
 
+def _remove_codemesh_section(content: str, heading: str = "## CodeMesh") -> tuple[str, bool]:
+    """Remove the CodeMesh section from a markdown file.
+
+    Returns (new_content, was_modified). If the file only contained the CodeMesh
+    section, returns ("", True) to signal the caller it can be deleted.
+    If no CodeMesh section is found, returns (content, False).
+    """
+    if heading not in content:
+        return content, False
+
+    # Split on the CodeMesh heading
+    parts = content.split(heading, 1)
+    before = parts[0]
+    after = parts[1] if len(parts) > 1 else ""
+
+    # The CodeMesh section runs until the next ## heading or end-of-file
+    # Find the next ## heading in the remaining content
+    next_section_idx = -1
+    if "\n## " in after:
+        next_section_idx = after.index("\n## ")
+
+    if next_section_idx >= 0:
+        # There's another section after CodeMesh — keep everything after it
+        after = after[next_section_idx:]  # keep the "\n## ..."
+        new_content = (before.rstrip("\n") + "\n\n" + after.lstrip("\n")).strip("\n") + "\n"
+        if not new_content.strip():
+            return "", True  # only had CodeMesh, file is now empty
+        return new_content, True
+    else:
+        # CodeMesh was the last (or only) section
+        if before.strip():
+            # There's content before CodeMesh — keep it
+            return before.rstrip("\n") + "\n", True
+        else:
+            # File only contained CodeMesh — signal for deletion
+            return "", True
+
+
 def clean_project(root: Path, force: bool = False) -> dict:
     """Remove CodeMesh project artifacts (.codemesh/, CLAUDE.md, AGENTS.md, .cursor/rules/).
 
-    Returns a dict with paths removed.
-    """
-    removed = []
+    Uses surgical removal for shared files (CLAUDE.md, AGENTS.md):
+    - If the file is EXACTLY our template, it's deleted
+    - If the file contains CodeMesh section mixed with user content, only the
+      CodeMesh section is extracted and the rest is preserved
+    - If the file doesn't contain CodeMesh content, it's left untouched
 
-    # Clean .codemesh/ directory
+    Returns a dict with paths removed or modified.
+    """
+    import shutil as _shutil
+
+    removed = []
+    modified = []
+
+    # --- .codemesh/ directory: always safe to remove entirely ---
     codemesh_dir = root / ".codemesh"
     if codemesh_dir.exists():
-        import shutil as _shutil
         _shutil.rmtree(codemesh_dir)
         removed.append(str(codemesh_dir))
 
-    # Clean agent instruction files written by init
-    for label, path in [
-        ("CLAUDE.md", root / "CLAUDE.md"),
-        ("AGENTS.md", root / "AGENTS.md"),
-        (".cursor/rules/codemesh.mdc", root / ".cursor" / "rules" / "codemesh.mdc"),
-    ]:
-        if path.exists():
-            if force or typer.confirm(f"Remove {label}?", default=False):
-                path.unlink()
-                removed.append(str(path))
+    # --- CLAUDE.md: surgical removal ---
+    claude_md = root / "CLAUDE.md"
+    if claude_md.exists():
+        content = claude_md.read_text()
+        if _CLAUDE_MD_TEMPLATE.strip() == content.strip():
+            # Exact match — safe to delete entirely
+            claude_md.unlink()
+            removed.append(str(claude_md))
+        elif "## CodeMesh" in content:
+            new_content, changed = _remove_codemesh_section(content)
+            if changed:
+                if new_content.strip():
+                    claude_md.write_text(new_content)
+                    modified.append(str(claude_md))
+                else:
+                    claude_md.unlink()
+                    removed.append(str(claude_md))
+        # else: file has no CodeMesh content — leave it alone
 
-    return {"removed": removed}
+    # --- AGENTS.md: surgical removal ---
+    agents_md = root / "AGENTS.md"
+    if agents_md.exists():
+        content = agents_md.read_text()
+        if _CODEX_TEMPLATE.strip() == content.strip():
+            agents_md.unlink()
+            removed.append(str(agents_md))
+        elif "## CodeMesh" in content:
+            new_content, changed = _remove_codemesh_section(content)
+            if changed:
+                if new_content.strip():
+                    agents_md.write_text(new_content)
+                    modified.append(str(agents_md))
+                else:
+                    agents_md.unlink()
+                    removed.append(str(agents_md))
+
+    # --- .cursor/rules/codemesh.mdc: dedicated file, safe to delete ---
+    cursor_rules = root / ".cursor" / "rules" / "codemesh.mdc"
+    if cursor_rules.exists():
+        content = cursor_rules.read_text()
+        if _CURSOR_RULES_TEMPLATE.strip() == content.strip() or "CodeMesh" in content:
+            cursor_rules.unlink()
+            removed.append(str(cursor_rules))
+
+    return {"removed": removed, "modified": modified}

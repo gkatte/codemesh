@@ -144,7 +144,13 @@ def uninstall(
     """Uninstall CodeMesh MCP server configuration from AI coding agents.
 
     Removes MCP server entries and permissions from agent config files.
-    Optionally cleans up project artifacts (.codemesh/, CLAUDE.md, AGENTS.md).
+
+    For shared instruction files (CLAUDE.md, AGENTS.md), uses surgical section
+    removal: only the CodeMesh section is extracted, user-written content is
+    preserved. If a file contains only CodeMesh content, it is deleted.
+    Dedicated files (.cursor/rules/codemesh.mdc, .codemesh/) are always fully
+    removed. Other MCP servers in .cursor/mcp.json and ~/.claude/claude.json
+    are untouched.
     """
     from codemesh.cli.install_cmd import (
         detect_agents,
@@ -193,10 +199,15 @@ def uninstall(
 
     if clean:
         removed = clean_project(root, force=yes)
-        if removed["removed"]:
-            typer.echo("\nProject artifacts removed:")
-            for p in removed["removed"]:
-                typer.echo(f"  {p}")
+        if removed["removed"] or removed["modified"]:
+            if removed["removed"]:
+                typer.echo("\nProject artifacts removed:")
+                for p in removed["removed"]:
+                    typer.echo(f"  {p}")
+            if removed["modified"]:
+                typer.echo("\nCodeMesh section removed from shared files (user content preserved):")
+                for p in removed["modified"]:
+                    typer.echo(f"  {p}")
         else:
             typer.echo("\nNo project artifacts found.")
 
