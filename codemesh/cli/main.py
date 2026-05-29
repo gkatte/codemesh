@@ -127,6 +127,81 @@ def install(
 
 
 @app.command()
+def uninstall(
+    target: str = typer.Option(
+        "auto",
+        "--target",
+        "-t",
+        help="Agent(s) to uninstall: auto, all, claude, cursor, codex, or comma-separated list",
+    ),
+    global_config: bool = typer.Option(
+        True, "--global/--local", help="Remove global config (default) or project-local"
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Non-interactive mode"),
+    path: str = typer.Option(".", "--path", "-p", help="Project path for local config"),
+    clean: bool = typer.Option(False, "--clean", help="Also remove .codemesh/ and rule files"),
+) -> None:
+    """Uninstall CodeMesh MCP server configuration from AI coding agents.
+
+    Removes MCP server entries and permissions from agent config files.
+    Optionally cleans up project artifacts (.codemesh/, CLAUDE.md, AGENTS.md).
+    """
+    from codemesh.cli.install_cmd import (
+        detect_agents,
+        uninstall_claude,
+        uninstall_codex,
+        uninstall_cursor,
+        clean_project,
+    )
+
+    root = Path(path).resolve()
+    targets = target.lower().split(",") if target not in ("auto", "all") else [target]
+
+    if "auto" in targets:
+        detected = detect_agents()
+        if not detected:
+            typer.echo("No AI coding agents detected. Use --target to specify manually.")
+            raise typer.Exit(1)
+        targets = detected
+        if not yes:
+            typer.echo(f"Detected agents: {', '.join(targets)}")
+            typer.confirm("Uninstall from these agents?", abort=True)
+
+    if "all" in targets:
+        targets = ["claude", "cursor", "codex"]
+
+    results = {}
+    for agent in targets:
+        agent = agent.strip()
+        if agent == "claude":
+            r = uninstall_claude(root, global_config=global_config)
+            results["claude"] = r
+        elif agent == "cursor":
+            r = uninstall_cursor(root)
+            results["cursor"] = r
+        elif agent == "codex":
+            r = uninstall_codex(root)
+            results["codex"] = r
+        else:
+            typer.echo(f"Unknown agent: {agent}", err=True)
+
+    typer.echo("CodeMesh MCP server removed:")
+    for agent, r in results.items():
+        for key, val in r.items():
+            if val:
+                typer.echo(f"  {agent}/{key}: {val}")
+
+    if clean:
+        removed = clean_project(root, force=yes)
+        if removed["removed"]:
+            typer.echo("\nProject artifacts removed:")
+            for p in removed["removed"]:
+                typer.echo(f"  {p}")
+        else:
+            typer.echo("\nNo project artifacts found.")
+
+
+@app.command()
 def index(
     path: str = typer.Argument(".", help="Path to the codebase to index"),
     workers: int | None = typer.Option(None, "--workers", "-w", help="Number of parallel workers"),

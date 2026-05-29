@@ -7,6 +7,8 @@ import json
 import logging
 from pathlib import Path
 
+import typer
+
 logger = logging.getLogger(__name__)
 
 _CLAUDE_MCP_CONFIG = {
@@ -185,6 +187,114 @@ def install_codex(root: Path) -> dict:
     return result
 
 
+def uninstall_claude(root: Path, global_config: bool = True) -> dict:
+    """Remove CodeMesh MCP server configuration from Claude Code.
+
+    Args:
+        root: Project root (for project-local config).
+        global_config: If True, modify ~/.claude.json (global).
+                      If False, modify .claude.json in project root.
+    """
+    result = {"claude_json": None, "claude_settings": None}
+
+    if global_config:
+        claude_dir = _find_claude_json_dir()
+        if claude_dir is None:
+            return result
+        claude_json = claude_dir / "claude.json"
+        claude_settings = claude_dir / "settings.json"
+    else:
+        claude_json = root / ".claude.json"
+        claude_settings = root / ".claude_settings.json"
+
+    # Remove codemesh from claude.json
+    if claude_json.exists():
+        try:
+            data = json.loads(claude_json.read_text())
+        except (json.JSONDecodeError, OSError):
+            data = {}
+        if "codemesh" in data.get("mcpServers", {}):
+            del data["mcpServers"]["codemesh"]
+            if not data["mcpServers"]:
+                del data["mcpServers"]
+            claude_json.write_text(json.dumps(data, indent=2))
+            result["claude_json"] = str(claude_json)
+        else:
+            result["claude_json"] = "not configured"
+
+    # Remove codemesh permissions from settings.json
+    if claude_settings.exists():
+        try:
+            settings = json.loads(claude_settings.read_text())
+        except (json.JSONDecodeError, OSError):
+            settings = {}
+        perms = settings.get("permissions", {}).get("allow", [])
+        codemesh_perms = [p for p in perms if p.startswith("mcp__codemesh__")]
+        if codemesh_perms:
+            settings.setdefault("permissions", {})["allow"] = [
+                p for p in perms if not p.startswith("mcp__codemesh__")
+            ]
+            claude_settings.write_text(json.dumps(settings, indent=2))
+            result["claude_settings"] = str(claude_settings)
+        else:
+            result["claude_settings"] = "not configured"
+
+    return result
+
+
+def uninstall_cursor(root: Path) -> dict:
+    """Remove CodeMesh MCP server configuration from Cursor."""
+    result = {"cursor_mcp": None}
+
+    mcp_json = root / ".cursor" / "mcp.json"
+    if not mcp_json.exists():
+        result["cursor_mcp"] = "not configured"
+        return result
+
+    try:
+        config = json.loads(mcp_json.read_text())
+    except (json.JSONDecodeError, OSError):
+        return result
+
+    if "codemesh" in config.get("mcpServers", {}):
+        del config["mcpServers"]["codemesh"]
+        if not config["mcpServers"]:
+            del config["mcpServers"]
+        mcp_json.write_text(json.dumps(config, indent=2))
+        result["cursor_mcp"] = str(mcp_json)
+    else:
+        result["cursor_mcp"] = "not configured"
+
+    return result
+
+
+def uninstall_codex(root: Path) -> dict:
+    """Remove CodeMesh MCP server configuration from Codex CLI."""
+    result = {"codex_config": None}
+
+    codex_dir = Path.home() / ".codex"
+    config_file = codex_dir / "config.json"
+    if not config_file.exists():
+        result["codex_config"] = "not configured"
+        return result
+
+    try:
+        config = json.loads(config_file.read_text())
+    except (json.JSONDecodeError, OSError):
+        return result
+
+    if "codemesh" in config.get("mcpServers", {}):
+        del config["mcpServers"]["codemesh"]
+        if not config["mcpServers"]:
+            del config["mcpServers"]
+        config_file.write_text(json.dumps(config, indent=2))
+        result["codex_config"] = str(config_file)
+    else:
+        result["codex_config"] = "not configured"
+
+    return result
+
+
 def detect_agents() -> list[str]:
     """Detect which AI coding agents are installed."""
     agents = []
@@ -206,3 +316,31 @@ def detect_agents() -> list[str]:
         agents.append("codex")
 
     return agents
+
+
+def clean_project(root: Path, force: bool = False) -> dict:
+    """Remove CodeMesh project artifacts (.codemesh/, CLAUDE.md, AGENTS.md, .cursor/rules/).
+
+    Returns a dict with paths removed.
+    """
+    removed = []
+
+    # Clean .codemesh/ directory
+    codemesh_dir = root / ".codemesh"
+    if codemesh_dir.exists():
+        import shutil as _shutil
+        _shutil.rmtree(codemesh_dir)
+        removed.append(str(codemesh_dir))
+
+    # Clean agent instruction files written by init
+    for label, path in [
+        ("CLAUDE.md", root / "CLAUDE.md"),
+        ("AGENTS.md", root / "AGENTS.md"),
+        (".cursor/rules/codemesh.mdc", root / ".cursor" / "rules" / "codemesh.mdc"),
+    ]:
+        if path.exists():
+            if force or typer.confirm(f"Remove {label}?", default=False):
+                path.unlink()
+                removed.append(str(path))
+
+    return {"removed": removed}
