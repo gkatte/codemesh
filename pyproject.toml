@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "codemesh"
-version = "0.1.5"
+version = "0.1.6"
 description = "BM25 keyword search and graph walk for code intelligence"
 readme = "README.md"
 license = {text = "MIT"}

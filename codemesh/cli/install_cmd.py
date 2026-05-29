@@ -1,10 +1,12 @@
 # mypy: ignore-errors
-"""Install command — auto-configures CodeMesh MCP server for AI coding agents."""
+"""Install/uninstall commands — configure CodeMesh MCP server for AI coding agents."""
 
 from __future__ import annotations
 
 import json
 import logging
+import shutil
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import typer
@@ -12,6 +14,9 @@ import typer
 from codemesh.cli.init import _CLAUDE_MD_TEMPLATE, _CODEX_TEMPLATE, _CURSOR_RULES_TEMPLATE
 
 logger = logging.getLogger(__name__)
+
+
+# ── MCP server config templates ──────────────────────────────────────────────
 
 _CLAUDE_MCP_CONFIG = {
     "mcpServers": {
@@ -40,6 +45,196 @@ _CLAUDE_PERMISSIONS = {
 }
 
 
+# ── Agent metadata ───────────────────────────────────────────────────────────
+
+@dataclass
+class AgentInfo:
+    name: str                          # canonical key: "claude", "cursor", etc.
+    display: str                       # human name: "Claude Code"
+    detected: bool = False             # is the agent installed on this machine?
+    configured: bool = False           # is codemesh already configured for this agent?
+    scope: str = "project"             # "project" or "global"
+    detail: str = ""                   # extra info for the UI, e.g. path
+
+
+def detect_agents(root: Path | None = None) -> list[AgentInfo]:
+    """Detect all supported agents and their codemesh configuration status.
+
+    Returns a list of AgentInfo for every known agent, with detected/configured
+    flags set accordingly.
+    """
+    if root is None:
+        root = Path.cwd()
+
+    agents: list[AgentInfo] = []
+
+    # ── Claude Code ─────────────────────────────────────────────────────────
+    claude_dir = _find_claude_json_dir()
+    claude_json = claude_dir / "claude.json" if claude_dir else None
+    claude_configured = (
+        claude_json is not None
+        and claude_json.exists()
+        and "codemesh" in json.loads(claude_json.read_text()).get("mcpServers", {})
+    )
+    agents.append(AgentInfo(
+        name="claude",
+        display="Claude Code",
+        detected=(claude_dir is not None and claude_dir.exists()),
+        configured=claude_configured,
+        scope="global",
+        detail=str(claude_json) if claude_json else "",
+    ))
+
+    # ── Cursor ──────────────────────────────────────────────────────────────
+    cursor_mcp = root / ".cursor" / "mcp.json"
+    cursor_configured = (
+        cursor_mcp.exists()
+        and "codemesh" in json.loads(cursor_mcp.read_text()).get("mcpServers", {})
+    )
+    agents.append(AgentInfo(
+        name="cursor",
+        display="Cursor",
+        detected=(root / ".cursor").exists(),
+        configured=cursor_configured,
+        scope="project",
+        detail=str(cursor_mcp),
+    ))
+
+    # ── Codex CLI ───────────────────────────────────────────────────────────
+    codex_dir = Path.home() / ".codex"
+    codex_config = codex_dir / "config.json"
+    codex_configured = (
+        codex_config.exists()
+        and "codemesh" in json.loads(codex_config.read_text()).get("mcpServers", {})
+    )
+    agents.append(AgentInfo(
+        name="codex",
+        display="Codex CLI",
+        detected=shutil.which("codex") is not None,
+        configured=codex_configured,
+        scope="global",
+        detail=str(codex_config),
+    ))
+
+    # ── Hermes Agent ────────────────────────────────────────────────────────
+    hermes_config = Path.home() / ".hermes" / "config.yaml"
+    hermes_configured = False
+    if hermes_config.exists():
+        try:
+            import yaml
+            hermes_data = yaml.safe_load(hermes_config.read_text()) or {}
+            mcp_servers = hermes_data.get("mcp_servers", {})
+            hermes_configured = "codemesh" in mcp_servers
+        except Exception:
+            pass
+    agents.append(AgentInfo(
+        name="hermes",
+        display="Hermes Agent",
+        detected=hermes_config.exists() or shutil.which("hermes") is not None,
+        configured=hermes_configured,
+        scope="global",
+        detail=str(hermes_config),
+    ))
+
+    return agents
+
+
+# ── Interactive agent selection ──────────────────────────────────────────────
+
+def select_agents_interactive(
+    agents: list[AgentInfo],
+    mode: str = "install",   # "install" or "uninstall"
+) -> list[str]:
+    """Present an interactive checklist and return the selected agent names.
+
+    Uses a simple numbered input — works in any terminal without requiring
+    an interactive TUI library.
+
+    For install:   pre-selects detected agents that are NOT yet configured.
+    For uninstall: pre-selects agents that ARE configured.
+    """
+    typer.echo("")
+    if mode == "install":
+        typer.echo("  Which agents should codemesh configure?")
+    else:
+        typer.echo("  Which agents should codemesh uninstall from?")
+    typer.echo("")
+
+    pre_selected: set[str] = set()
+    for i, a in enumerate(agents, 1):
+        if mode == "install" and a.detected and not a.configured:
+            pre_selected.add(a.name)
+
+        # Build annotation
+        annotations: list[str] = []
+        if a.configured:
+            annotations.append("already configured")
+        elif not a.detected:
+            annotations.append("not found")
+        if a.scope == "global" and a.detected:
+            annotations.append("global only")
+
+        ann_str = f" — {', '.join(annotations)}" if annotations else ""
+        marker = "◼" if a.name in pre_selected else "◻"
+
+        typer.echo(f"  {i}. {marker} {a.display}{ann_str}")
+
+    typer.echo("")
+    typer.echo("  Enter numbers to toggle (e.g. 1,3,4), 'all', or 'none'.")
+    typer.echo("  Press Enter with no input to accept the pre-selection.")
+    typer.echo("")
+
+    selected: set[str] = set(pre_selected)
+
+    while True:
+        raw = typer.prompt("  Select", default="", show_default=False).strip()
+
+        if raw == "":
+            break
+        elif raw.lower() == "all":
+            selected = {a.name for a in agents if a.detected}
+            break
+        elif raw.lower() == "none":
+            selected = set()
+            break
+        else:
+            # Parse comma/space-separated numbers
+            parts = raw.replace(",", " ").split()
+            for p in parts:
+                try:
+                    idx = int(p) - 1
+                    if 0 <= idx < len(agents):
+                        name = agents[idx].name
+                        if name in selected:
+                            selected.discard(name)
+                        else:
+                            selected.add(name)
+                    else:
+                        typer.echo(f"  Ignoring out-of-range number: {p}")
+                except ValueError:
+                    # Match by name
+                    matched = False
+                    for a in agents:
+                        if a.name == p.lower() or a.display.lower() == p.lower():
+                            if a.name in selected:
+                                selected.discard(a.name)
+                            else:
+                                selected.add(a.name)
+                            matched = True
+                            break
+                    if not matched:
+                        typer.echo(f"  Unknown agent: {p}")
+            break
+
+    if not selected:
+        typer.echo("  No agents selected.")
+        raise typer.Exit(1)
+
+    return list(selected)
+
+
+# ── Install helpers ──────────────────────────────────────────────────────────
+
 def _find_claude_json_dir() -> Path | None:
     """Find the Claude Code configuration directory."""
     candidates = [
@@ -49,10 +244,7 @@ def _find_claude_json_dir() -> Path | None:
     for c in candidates:
         if c.exists():
             return c
-    # Create the default location
-    claude_dir = Path.home() / ".claude"
-    claude_dir.mkdir(parents=True, exist_ok=True)
-    return claude_dir
+    return None
 
 
 def _merge_json_file(path: Path, new_data: dict) -> dict:
@@ -64,12 +256,10 @@ def _merge_json_file(path: Path, new_data: dict) -> dict:
         except (json.JSONDecodeError, OSError):
             existing = {}
 
-    # Merge MCP servers
     if "mcpServers" in new_data:
         existing.setdefault("mcpServers", {})
         existing["mcpServers"].update(new_data["mcpServers"])
 
-    # Merge permissions
     if "permissions" in new_data and "allow" in new_data["permissions"]:
         existing.setdefault("permissions", {"allow": []})
         perms_allow = existing["permissions"].get("allow", [])
@@ -82,30 +272,24 @@ def _merge_json_file(path: Path, new_data: dict) -> dict:
 
 
 def install_claude(root: Path, global_config: bool = True) -> dict:
-    """Configure Claude Code to use CodeMesh MCP server.
-
-    Args:
-        root: Project root (for project-local config)
-        global_config: If True, write to ~/.claude.json (global).
-                      If False, write to .claude.json in project root.
-    """
-    result = {"claude_json": None, "claude_settings": None, "claude_md": None}
+    """Configure Claude Code to use CodeMesh MCP server."""
+    result = {"claude_json": None, "claude_settings": None}
 
     if global_config:
         claude_dir = _find_claude_json_dir()
         if claude_dir is None:
-            return result
+            claude_dir = Path.home() / ".claude"
+            claude_dir.mkdir(parents=True, exist_ok=True)
         claude_json = claude_dir / "claude.json"
         claude_settings = claude_dir / "settings.json"
     else:
         claude_json = root / ".claude.json"
         claude_settings = root / ".claude_settings.json"
 
-    # Merge MCP config
+    # Check if already configured
     if claude_json.exists():
-        existing = json.loads(claude_json.read_text())
-        existing_mcp = existing.get("mcpServers", {})
-        if "codemesh" in existing_mcp:
+        existing = json.loads(claude_json.read_text()) if claude_json.exists() else {}
+        if "codemesh" in existing.get("mcpServers", {}):
             result["claude_json"] = str(claude_json) + " (already configured)"
             return result
 
@@ -113,7 +297,6 @@ def install_claude(root: Path, global_config: bool = True) -> dict:
     claude_json.write_text(json.dumps(merged, indent=2))
     result["claude_json"] = str(claude_json)
 
-    # Merge permissions
     merged_settings = _merge_json_file(claude_settings, _CLAUDE_PERMISSIONS)
     claude_settings.write_text(json.dumps(merged_settings, indent=2))
     result["claude_settings"] = str(claude_settings)
@@ -122,10 +305,7 @@ def install_claude(root: Path, global_config: bool = True) -> dict:
 
 
 def install_cursor(root: Path) -> dict:
-    """Configure Cursor to use CodeMesh MCP server.
-
-    Cursor uses .cursor/mcp.json in the project directory.
-    """
+    """Configure Cursor to use CodeMesh MCP server."""
     result = {"cursor_mcp": None}
 
     cursor_dir = root / ".cursor"
@@ -156,10 +336,7 @@ def install_cursor(root: Path) -> dict:
 
 
 def install_codex(root: Path) -> dict:
-    """Configure Codex CLI to use CodeMesh MCP server.
-
-    Codex uses ~/.codex/config.json.
-    """
+    """Configure Codex CLI to use CodeMesh MCP server."""
     result = {"codex_config": None}
 
     codex_dir = Path.home() / ".codex"
@@ -189,14 +366,49 @@ def install_codex(root: Path) -> dict:
     return result
 
 
-def uninstall_claude(root: Path, global_config: bool = True) -> dict:
-    """Remove CodeMesh MCP server configuration from Claude Code.
+def install_hermes(_root: Path) -> dict:
+    """Configure Hermes Agent to use CodeMesh MCP server.
 
-    Args:
-        root: Project root (for project-local config).
-        global_config: If True, modify ~/.claude.json (global).
-                      If False, modify .claude.json in project root.
+    Hermes uses ~/.hermes/config.yaml with an mcp_servers section.
+    Silently returns an empty result if PyYAML is not installed.
     """
+    result: dict = {}
+
+    try:
+        import yaml  # noqa: F401
+    except ImportError:
+        return result  # PyYAML not installed — skip silently
+
+    hermes_config_path = Path.home() / ".hermes" / "config.yaml"
+    if not hermes_config_path.parent.exists():
+        hermes_config_path.parent.mkdir(parents=True, exist_ok=True)
+
+    config: dict = {}
+    if hermes_config_path.exists():
+        try:
+            config = yaml.safe_load(hermes_config_path.read_text()) or {}
+        except Exception:
+            config = {}
+
+    config.setdefault("mcp_servers", {})
+    if "codemesh" in config.get("mcp_servers", {}):
+        return result  # already configured
+
+    config["mcp_servers"]["codemesh"] = {
+        "command": "codemesh",
+        "args": ["serve", "--transport", "stdio"],
+        "enabled": True,
+    }
+    hermes_config_path.write_text(yaml.dump(config, default_flow_style=False, sort_keys=False))
+    result["hermes_config"] = str(hermes_config_path)
+
+    return result
+
+
+# ── Uninstall helpers ────────────────────────────────────────────────────────
+
+def uninstall_claude(root: Path, global_config: bool = True) -> dict:
+    """Remove CodeMesh MCP server configuration from Claude Code."""
     result = {"claude_json": None, "claude_settings": None}
 
     if global_config:
@@ -209,7 +421,6 @@ def uninstall_claude(root: Path, global_config: bool = True) -> dict:
         claude_json = root / ".claude.json"
         claude_settings = root / ".claude_settings.json"
 
-    # Remove codemesh from claude.json
     if claude_json.exists():
         try:
             data = json.loads(claude_json.read_text())
@@ -224,7 +435,6 @@ def uninstall_claude(root: Path, global_config: bool = True) -> dict:
         else:
             result["claude_json"] = "not configured"
 
-    # Remove codemesh permissions from settings.json
     if claude_settings.exists():
         try:
             settings = json.loads(claude_settings.read_text())
@@ -270,7 +480,7 @@ def uninstall_cursor(root: Path) -> dict:
     return result
 
 
-def uninstall_codex(root: Path) -> dict:
+def uninstall_codex(_root: Path) -> dict:
     """Remove CodeMesh MCP server configuration from Codex CLI."""
     result = {"codex_config": None}
 
@@ -297,64 +507,65 @@ def uninstall_codex(root: Path) -> dict:
     return result
 
 
-def detect_agents() -> list[str]:
-    """Detect which AI coding agents are installed."""
-    agents = []
+def uninstall_hermes(_root: Path) -> dict:
+    """Remove CodeMesh MCP server configuration from Hermes Agent.
 
-    # Check for Claude Code
-    claude_dir = _find_claude_json_dir()
-    if claude_dir and claude_dir.exists():
-        agents.append("claude")
+    Silently returns an empty result if PyYAML is not installed.
+    """
+    result: dict = {}
 
-    # Check for Cursor
-    cursor_check = Path.home() / ".cursor"
-    if cursor_check.exists():
-        agents.append("cursor")
+    try:
+        import yaml  # noqa: F401
+    except ImportError:
+        return result
 
-    # Check for Codex CLI
-    import shutil
+    hermes_config_path = Path.home() / ".hermes" / "config.yaml"
+    if not hermes_config_path.exists():
+        return result
 
-    if shutil.which("codex"):
-        agents.append("codex")
+    try:
+        config = yaml.safe_load(hermes_config_path.read_text()) or {}
+    except Exception:
+        return result
 
-    return agents
+    if "codemesh" in config.get("mcp_servers", {}):
+        del config["mcp_servers"]["codemesh"]
+        if not config["mcp_servers"]:
+            del config["mcp_servers"]
+        hermes_config_path.write_text(yaml.dump(config, default_flow_style=False, sort_keys=False))
+        result["hermes_config"] = str(hermes_config_path)
 
+    return result
+
+
+# ── Project artifact cleanup (surgical) ──────────────────────────────────────
 
 def _remove_codemesh_section(content: str, heading: str = "## CodeMesh") -> tuple[str, bool]:
     """Remove the CodeMesh section from a markdown file.
 
-    Returns (new_content, was_modified). If the file only contained the CodeMesh
-    section, returns ("", True) to signal the caller it can be deleted.
-    If no CodeMesh section is found, returns (content, False).
+    Returns (new_content, was_modified).
     """
     if heading not in content:
         return content, False
 
-    # Split on the CodeMesh heading
     parts = content.split(heading, 1)
     before = parts[0]
     after = parts[1] if len(parts) > 1 else ""
 
-    # The CodeMesh section runs until the next ## heading or end-of-file
-    # Find the next ## heading in the remaining content
     next_section_idx = -1
     if "\n## " in after:
         next_section_idx = after.index("\n## ")
 
     if next_section_idx >= 0:
-        # There's another section after CodeMesh — keep everything after it
-        after = after[next_section_idx:]  # keep the "\n## ..."
+        after = after[next_section_idx:]
         new_content = (before.rstrip("\n") + "\n\n" + after.lstrip("\n")).strip("\n") + "\n"
         if not new_content.strip():
-            return "", True  # only had CodeMesh, file is now empty
+            return "", True
         return new_content, True
     else:
-        # CodeMesh was the last (or only) section
         if before.strip():
-            # There's content before CodeMesh — keep it
             return before.rstrip("\n") + "\n", True
         else:
-            # File only contained CodeMesh — signal for deletion
             return "", True
 
 
@@ -371,8 +582,8 @@ def clean_project(root: Path, force: bool = False) -> dict:
     """
     import shutil as _shutil
 
-    removed = []
-    modified = []
+    removed: list[str] = []
+    modified: list[str] = []
 
     # --- .codemesh/ directory: always safe to remove entirely ---
     codemesh_dir = root / ".codemesh"
@@ -385,7 +596,6 @@ def clean_project(root: Path, force: bool = False) -> dict:
     if claude_md.exists():
         content = claude_md.read_text()
         if _CLAUDE_MD_TEMPLATE.strip() == content.strip():
-            # Exact match — safe to delete entirely
             claude_md.unlink()
             removed.append(str(claude_md))
         elif "## CodeMesh" in content:
@@ -397,7 +607,6 @@ def clean_project(root: Path, force: bool = False) -> dict:
                 else:
                     claude_md.unlink()
                     removed.append(str(claude_md))
-        # else: file has no CodeMesh content — leave it alone
 
     # --- AGENTS.md: surgical removal ---
     agents_md = root / "AGENTS.md"
@@ -419,9 +628,7 @@ def clean_project(root: Path, force: bool = False) -> dict:
     # --- .cursor/rules/codemesh.mdc: dedicated file, safe to delete ---
     cursor_rules = root / ".cursor" / "rules" / "codemesh.mdc"
     if cursor_rules.exists():
-        content = cursor_rules.read_text()
-        if _CURSOR_RULES_TEMPLATE.strip() == content.strip() or "CodeMesh" in content:
-            cursor_rules.unlink()
-            removed.append(str(cursor_rules))
+        cursor_rules.unlink()
+        removed.append(str(cursor_rules))
 
     return {"removed": removed, "modified": modified}

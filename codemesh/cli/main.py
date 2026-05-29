@@ -58,7 +58,7 @@ def install(
         "auto",
         "--target",
         "-t",
-        help="Agent(s) to configure: auto, all, claude, cursor, codex, or comma-separated list",
+        help="Agent(s) to configure: auto, all, claude, cursor, codex, hermes, or comma-separated list",
     ),
     global_config: bool = typer.Option(
         True, "--global/--local", help="Write global config (default) or project-local"
@@ -69,43 +69,55 @@ def install(
     """Install CodeMesh MCP server configuration for AI coding agents.
 
     Auto-detects installed agents and writes MCP server config + permissions.
-    Supports Claude Code, Cursor, and Codex CLI.
+    Supports Claude Code, Cursor, Codex CLI, and Hermes Agent.
+
+    Run without --yes for an interactive checklist to pick which agents to configure.
     """
     from codemesh.cli.install_cmd import (
+        AgentInfo,
         detect_agents,
         install_claude,
         install_codex,
         install_cursor,
+        install_hermes,
+        select_agents_interactive,
     )
 
     root = Path(path).resolve()
     targets = target.lower().split(",") if target not in ("auto", "all") else [target]
 
     if "auto" in targets:
-        detected = detect_agents()
+        agents = detect_agents(root)
+        detected = [a for a in agents if a.detected]
+
         if not detected:
             typer.echo("No AI coding agents detected. Use --target to specify manually.")
             raise typer.Exit(1)
-        targets = detected
-        if not yes:
-            typer.echo(f"Detected agents: {', '.join(targets)}")
-            typer.confirm("Configure these agents?", abort=True)
+
+        if yes:
+            # Non-interactive: configure all detected agents that aren't already configured
+            targets = [a.name for a in detected if not a.configured]
+            if not targets:
+                targets = [a.name for a in detected]
+        else:
+            targets = select_agents_interactive(agents, mode="install")
 
     if "all" in targets:
-        targets = ["claude", "cursor", "codex"]
+        targets = ["claude", "cursor", "codex", "hermes"]
 
-    results = {}
+    _INSTALL_FUNCS = {
+        "claude": lambda: install_claude(root, global_config=global_config),
+        "cursor": lambda: install_cursor(root),
+        "codex": lambda: install_codex(root),
+        "hermes": lambda: install_hermes(root),
+    }
+
+    results: dict = {}
     for agent in targets:
         agent = agent.strip()
-        if agent == "claude":
-            r = install_claude(root, global_config=global_config)
-            results["claude"] = r
-        elif agent == "cursor":
-            r = install_cursor(root)
-            results["cursor"] = r
-        elif agent == "codex":
-            r = install_codex(root)
-            results["codex"] = r
+        fn = _INSTALL_FUNCS.get(agent)
+        if fn:
+            results[agent] = fn()
         else:
             typer.echo(f"Unknown agent: {agent}", err=True)
 
@@ -132,7 +144,7 @@ def uninstall(
         "auto",
         "--target",
         "-t",
-        help="Agent(s) to uninstall: auto, all, claude, cursor, codex, or comma-separated list",
+        help="Agent(s) to uninstall: auto, all, claude, cursor, codex, hermes, or comma-separated list",
     ),
     global_config: bool = typer.Option(
         True, "--global/--local", help="Remove global config (default) or project-local"
@@ -151,43 +163,52 @@ def uninstall(
     Dedicated files (.cursor/rules/codemesh.mdc, .codemesh/) are always fully
     removed. Other MCP servers in .cursor/mcp.json and ~/.claude/claude.json
     are untouched.
+
+    Run without --yes for an interactive checklist to pick which agents to uninstall from.
     """
     from codemesh.cli.install_cmd import (
+        AgentInfo,
         detect_agents,
         uninstall_claude,
         uninstall_codex,
         uninstall_cursor,
+        uninstall_hermes,
         clean_project,
+        select_agents_interactive,
     )
 
     root = Path(path).resolve()
     targets = target.lower().split(",") if target not in ("auto", "all") else [target]
 
     if "auto" in targets:
-        detected = detect_agents()
-        if not detected:
-            typer.echo("No AI coding agents detected. Use --target to specify manually.")
+        agents = detect_agents(root)
+        configured = [a for a in agents if a.configured]
+
+        if not configured:
+            typer.echo("CodeMesh is not configured for any detected agents.")
             raise typer.Exit(1)
-        targets = detected
-        if not yes:
-            typer.echo(f"Detected agents: {', '.join(targets)}")
-            typer.confirm("Uninstall from these agents?", abort=True)
+
+        if yes:
+            targets = [a.name for a in configured]
+        else:
+            targets = select_agents_interactive(agents, mode="uninstall")
 
     if "all" in targets:
-        targets = ["claude", "cursor", "codex"]
+        targets = ["claude", "cursor", "codex", "hermes"]
 
-    results = {}
+    _UNINSTALL_FUNCS = {
+        "claude": lambda: uninstall_claude(root, global_config=global_config),
+        "cursor": lambda: uninstall_cursor(root),
+        "codex": lambda: uninstall_codex(root),
+        "hermes": lambda: uninstall_hermes(root),
+    }
+
+    results: dict = {}
     for agent in targets:
         agent = agent.strip()
-        if agent == "claude":
-            r = uninstall_claude(root, global_config=global_config)
-            results["claude"] = r
-        elif agent == "cursor":
-            r = uninstall_cursor(root)
-            results["cursor"] = r
-        elif agent == "codex":
-            r = uninstall_codex(root)
-            results["codex"] = r
+        fn = _UNINSTALL_FUNCS.get(agent)
+        if fn:
+            results[agent] = fn()
         else:
             typer.echo(f"Unknown agent: {agent}", err=True)
 
