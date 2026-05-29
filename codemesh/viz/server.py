@@ -9,17 +9,22 @@ from typing import Annotated
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from codemesh.db.connection import create_connection, get_db_path
 from codemesh.db.queries import count_edges, count_nodes, get_node, search_nodes_fts
 from codemesh.viz.graph_builder import build_graph
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
+STATIC_DIR = Path(__file__).parent / "static"
 
 
 def create_app(root: Path) -> FastAPI:
     """Create the FastAPI application."""
     app = FastAPI(title="CodeMesh Visualization")
+
+    if STATIC_DIR.exists():
+        app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     @app.get("/", response_class=HTMLResponse)
     async def index():

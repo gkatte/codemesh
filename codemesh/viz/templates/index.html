@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CodeMesh — Graph Visualization</style>
+<title>CodeMesh — Graph Visualization</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #e2e8f0; overflow: hidden; }
@@ -101,7 +101,7 @@ body.light #stats { color: #94a3b8; }
 
 <div id="cy"></div>
 
-<script src="https://unpkg.com/cytoscape@3.30.0/dist/cytoscape.min.js"></script>
+<script src="/static/cytoscape.min.js"></script>
 
 <script>
 const NODE_COLORS = { function: '#3b82f6', class: '#22c55e', module: '#6b7280', method: '#8b5cf6', variable: '#f97316', interface: '#06b6d4', type_alias: '#ec4899', enum: '#14b8a6', struct: '#14b8a6', constant: '#f59e0b', decorator: '#a855f7', parameter: '#64748b', property: '#06b6d4', trait: '#14b8a6', file: '#475569', import: '#ef4444', unknown: '#94a3b8' };
@@ -131,15 +131,17 @@ async function fetchJSON(url) {
 }
 
 function buildElements(graph) {
-  // Filter out file nodes for cleaner visualization, keep them for stats
+  // Filter out file nodes and "contains" edges for cleaner visualization
   const visibleNodes = graph.nodes.filter(n => n.data.kind !== 'file');
   const visibleIds = new Set(visibleNodes.map(n => n.data.id));
-  const visibleEdges = graph.edges.filter(e => visibleIds.has(e.data.source) && visibleIds.has(e.data.target));
-  // Also filter out "contains" edges which are just structural
-  const renderEdges = visibleEdges.filter(e => e.data.kind !== 'contains');
+  const renderEdges = graph.edges.filter(e =>
+    visibleIds.has(e.data.source) &&
+    visibleIds.has(e.data.target) &&
+    e.data.kind !== 'contains'
+  );
   return {
-    nodes: visibleNodes.map(n => ({ data: { ...n.data, id: n.data.id } })),
-    edges: renderEdges.map(e => ({ data: { ...e.data, id: e.data.id || (e.data.source + '->' + e.data.target), source: e.data.source, target: e.data.target } })),
+    nodes: visibleNodes,
+    edges: renderEdges,
   };
 }
 
@@ -221,7 +223,6 @@ function initCytoscape(elements) {
 async function initGraph() {
   try {
     const graph = await fetchJSON('/api/graph?depth=2');
-    hideLoading();
 
     allNodes = graph.nodes;
     allEdges = graph.edges;
@@ -233,11 +234,13 @@ async function initGraph() {
     const kinds = [...new Set(allNodes.map(n => n.data.kind))].sort();
     const langs = [...new Set(allNodes.map(n => n.data.language).filter(Boolean))].sort();
     kinds.forEach(k => { const o = document.createElement('option'); o.value = k; o.textContent = k; document.getElementById('kindFilter').appendChild(o); });
-    langs.forEach(l => { const o = document.createElement('option'); o.value = l; o.textContent = l; document.getElementById('langFilter').appendChild(l); });
+    langs.forEach(l => { const o = document.createElement('option'); o.value = l; o.textContent = l; document.getElementById('langFilter').appendChild(o); });
 
     // Stats
     const stats = await fetchJSON('/api/stats');
     document.getElementById('stats').textContent = `${stats.total_nodes.toLocaleString()} nodes · ${stats.total_edges.toLocaleString()} edges`;
+
+    hideLoading();
 
   } catch (e) {
     showError(`Failed to load graph: ${e.message}`);
