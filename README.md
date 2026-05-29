@@ -31,14 +31,14 @@ CodeMesh builds a local semantic knowledge graph of codebases — symbol relatio
 
 ### Install
 
-**Option 1: pip**
+**Option 1: uv tool install (recommended)**
 ```bash
-pip install codemesh
+uv tool install codemesh
 ```
 
-**Option 2: uv (faster)**
+**Option 2: pip**
 ```bash
-uv pip install codemesh
+pip install codemesh
 ```
 
 **Option 3: from source**
@@ -46,6 +46,11 @@ uv pip install codemesh
 git clone https://github.com/gkatte/codemesh.git
 cd codemesh
 pip install -e .
+```
+
+Upgrade:
+```bash
+uv tool install codemesh --force
 ```
 
 Verify installation:
