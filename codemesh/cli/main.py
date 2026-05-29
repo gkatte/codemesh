@@ -74,7 +74,6 @@ def install(
     Run without --yes for an interactive checklist to pick which agents to configure.
     """
     from codemesh.cli.install_cmd import (
-        AgentInfo,
         detect_agents,
         install_claude,
         install_codex,
@@ -105,7 +104,7 @@ def install(
     if "all" in targets:
         targets = ["claude", "cursor", "codex", "hermes"]
 
-    _INSTALL_FUNCS = {
+    install_funcs = {
         "claude": lambda: install_claude(root, global_config=global_config),
         "cursor": lambda: install_cursor(root),
         "codex": lambda: install_codex(root),
@@ -115,7 +114,7 @@ def install(
     results: dict = {}
     for agent in targets:
         agent = agent.strip()
-        fn = _INSTALL_FUNCS.get(agent)
+        fn = install_funcs.get(agent)
         if fn:
             results[agent] = fn()
         else:
@@ -167,15 +166,14 @@ def uninstall(
     Run without --yes for an interactive checklist to pick which agents to uninstall from.
     """
     from codemesh.cli.install_cmd import (
-        AgentInfo,
+        clean_project,
         detect_agents,
+        has_project_artifacts,
+        select_agents_interactive,
         uninstall_claude,
         uninstall_codex,
         uninstall_cursor,
         uninstall_hermes,
-        clean_project,
-        has_project_artifacts,
-        select_agents_interactive,
     )
 
     root = Path(path).resolve()
@@ -199,7 +197,7 @@ def uninstall(
         targets = ["claude", "cursor", "codex", "hermes"]
 
     # ── Remove MCP server configs ──────────────────────────────────────────
-    _UNINSTALL_FUNCS = {
+    uninstall_funcs = {
         "claude": lambda: uninstall_claude(root, global_config=global_config),
         "cursor": lambda: uninstall_cursor(root),
         "codex": lambda: uninstall_codex(root),
@@ -209,7 +207,7 @@ def uninstall(
     results: dict = {}
     for agent in targets:
         agent = agent.strip()
-        fn = _UNINSTALL_FUNCS.get(agent)
+        fn = uninstall_funcs.get(agent)
         if fn:
             results[agent] = fn()
         else:

@@ -6,12 +6,12 @@ from __future__ import annotations
 import json
 import logging
 import shutil
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import typer
 
-from codemesh.cli.init import _CLAUDE_MD_TEMPLATE, _CODEX_TEMPLATE, _CURSOR_RULES_TEMPLATE
+from codemesh.cli.init import _CLAUDE_MD_TEMPLATE, _CODEX_TEMPLATE
 
 logger = logging.getLogger(__name__)
 
@@ -47,14 +47,15 @@ _CLAUDE_PERMISSIONS = {
 
 # ── Agent metadata ───────────────────────────────────────────────────────────
 
+
 @dataclass
 class AgentInfo:
-    name: str                          # canonical key: "claude", "cursor", etc.
-    display: str                       # human name: "Claude Code"
-    detected: bool = False             # is the agent installed on this machine?
-    configured: bool = False           # is codemesh already configured for this agent?
-    scope: str = "project"             # "project" or "global"
-    detail: str = ""                   # extra info for the UI, e.g. path
+    name: str  # canonical key: "claude", "cursor", etc.
+    display: str  # human name: "Claude Code"
+    detected: bool = False  # is the agent installed on this machine?
+    configured: bool = False  # is codemesh already configured for this agent?
+    scope: str = "project"  # "project" or "global"
+    detail: str = ""  # extra info for the UI, e.g. path
 
 
 def detect_agents(root: Path | None = None) -> list[AgentInfo]:
@@ -76,45 +77,49 @@ def detect_agents(root: Path | None = None) -> list[AgentInfo]:
         and claude_json.exists()
         and "codemesh" in json.loads(claude_json.read_text()).get("mcpServers", {})
     )
-    agents.append(AgentInfo(
-        name="claude",
-        display="Claude Code",
-        detected=(claude_dir is not None and claude_dir.exists()),
-        configured=claude_configured,
-        scope="global",
-        detail=str(claude_json) if claude_json else "",
-    ))
+    agents.append(
+        AgentInfo(
+            name="claude",
+            display="Claude Code",
+            detected=(claude_dir is not None and claude_dir.exists()),
+            configured=claude_configured,
+            scope="global",
+            detail=str(claude_json) if claude_json else "",
+        )
+    )
 
     # ── Cursor ──────────────────────────────────────────────────────────────
     cursor_mcp = root / ".cursor" / "mcp.json"
-    cursor_configured = (
-        cursor_mcp.exists()
-        and "codemesh" in json.loads(cursor_mcp.read_text()).get("mcpServers", {})
+    cursor_configured = cursor_mcp.exists() and "codemesh" in json.loads(
+        cursor_mcp.read_text()
+    ).get("mcpServers", {})
+    agents.append(
+        AgentInfo(
+            name="cursor",
+            display="Cursor",
+            detected=(root / ".cursor").exists(),
+            configured=cursor_configured,
+            scope="project",
+            detail=str(cursor_mcp),
+        )
     )
-    agents.append(AgentInfo(
-        name="cursor",
-        display="Cursor",
-        detected=(root / ".cursor").exists(),
-        configured=cursor_configured,
-        scope="project",
-        detail=str(cursor_mcp),
-    ))
 
     # ── Codex CLI ───────────────────────────────────────────────────────────
     codex_dir = Path.home() / ".codex"
     codex_config = codex_dir / "config.json"
-    codex_configured = (
-        codex_config.exists()
-        and "codemesh" in json.loads(codex_config.read_text()).get("mcpServers", {})
+    codex_configured = codex_config.exists() and "codemesh" in json.loads(
+        codex_config.read_text()
+    ).get("mcpServers", {})
+    agents.append(
+        AgentInfo(
+            name="codex",
+            display="Codex CLI",
+            detected=shutil.which("codex") is not None,
+            configured=codex_configured,
+            scope="global",
+            detail=str(codex_config),
+        )
     )
-    agents.append(AgentInfo(
-        name="codex",
-        display="Codex CLI",
-        detected=shutil.which("codex") is not None,
-        configured=codex_configured,
-        scope="global",
-        detail=str(codex_config),
-    ))
 
     # ── Hermes Agent ────────────────────────────────────────────────────────
     hermes_config = Path.home() / ".hermes" / "config.yaml"
@@ -122,28 +127,32 @@ def detect_agents(root: Path | None = None) -> list[AgentInfo]:
     if hermes_config.exists():
         try:
             import yaml
+
             hermes_data = yaml.safe_load(hermes_config.read_text()) or {}
             mcp_servers = hermes_data.get("mcp_servers", {})
             hermes_configured = "codemesh" in mcp_servers
         except Exception:
             pass
-    agents.append(AgentInfo(
-        name="hermes",
-        display="Hermes Agent",
-        detected=hermes_config.exists() or shutil.which("hermes") is not None,
-        configured=hermes_configured,
-        scope="global",
-        detail=str(hermes_config),
-    ))
+    agents.append(
+        AgentInfo(
+            name="hermes",
+            display="Hermes Agent",
+            detected=hermes_config.exists() or shutil.which("hermes") is not None,
+            configured=hermes_configured,
+            scope="global",
+            detail=str(hermes_config),
+        )
+    )
 
     return agents
 
 
 # ── Interactive agent selection ──────────────────────────────────────────────
 
+
 def select_agents_interactive(
     agents: list[AgentInfo],
-    mode: str = "install",   # "install" or "uninstall"
+    mode: str = "install",  # "install" or "uninstall"
 ) -> list[str]:
     """Present an interactive checklist and return the selected agent names.
 
@@ -234,6 +243,7 @@ def select_agents_interactive(
 
 
 # ── Install helpers ──────────────────────────────────────────────────────────
+
 
 def _find_claude_json_dir() -> Path | None:
     """Find the Claude Code configuration directory."""
@@ -407,6 +417,7 @@ def install_hermes(_root: Path) -> dict:
 
 # ── Uninstall helpers ────────────────────────────────────────────────────────
 
+
 def uninstall_claude(root: Path, global_config: bool = True) -> dict:
     """Remove CodeMesh MCP server configuration from Claude Code."""
     result = {"claude_json": None, "claude_settings": None}
@@ -540,6 +551,7 @@ def uninstall_hermes(_root: Path) -> dict:
 
 # ── Project artifact cleanup (surgical) ──────────────────────────────────────
 
+
 def _remove_codemesh_section(content: str, heading: str = "## CodeMesh") -> tuple[str, bool]:
     """Remove the CodeMesh section from a markdown file.
 
@@ -647,6 +659,4 @@ def has_project_artifacts(root: Path) -> bool:
         return True
     if agents_md.exists() and "CodeMesh" in agents_md.read_text():
         return True
-    if cursor_rules.exists():
-        return True
-    return False
+    return cursor_rules.exists()

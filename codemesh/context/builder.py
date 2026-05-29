@@ -47,7 +47,6 @@ class ContextOptions:
     include_graph_summary: bool = False
     format: ContextFormat = ContextFormat.XML
     filter_low_value: bool = True
-    max_snippet_chars: int = 800  # Per-snippet cap
 
 
 @dataclass

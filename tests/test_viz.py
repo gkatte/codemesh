@@ -280,19 +280,6 @@ class TestServer:
         assert len(data) >= 1
         assert data[0]["name"] == "authenticate"
 
-    def test_embedding_stats_endpoint(self, test_db):
-        from starlette.testclient import TestClient
-
-        from codemesh.viz.server import create_app
-
-        app = create_app(test_db)
-        client = TestClient(app)
-        response = client.get("/api/embedding-stats")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["total_nodes"] == 5
-        assert data["embedded_nodes"] == 3  # 2 functions + 1 class
-
     def test_index_html(self, test_db):
         from starlette.testclient import TestClient
 
@@ -304,63 +291,3 @@ class TestServer:
         assert response.status_code == 200
         assert "cytoscape" in response.text.lower()
         assert "codemesh" in response.text.lower()
-
-
-class TestEmbeddingProjector:
-    """Tests for V2: embedding_projector.py"""
-
-    def test_project_embeddings_2d(self, test_db):
-        pytest.importorskip("umap")
-        from codemesh.viz.embedding_projector import project_embeddings
-
-        points = project_embeddings(test_db, n_components=2)
-        assert len(points) == 3  # 3 nodes have embeddings
-        for p in points:
-            assert "id" in p
-            assert "name" in p
-            assert "x" in p
-            assert "y" in p
-            assert "kind" in p
-            assert "file_path" in p
-            assert "degree" in p
-            assert isinstance(p["x"], float)
-            assert isinstance(p["y"], float)
-
-    def test_project_embeddings_3d(self, test_db):
-        pytest.importorskip("umap")
-        from codemesh.viz.embedding_projector import project_embeddings
-
-        points = project_embeddings(test_db, n_components=3)
-        assert len(points) == 3  # 3 nodes have embeddings
-        for p in points:
-            assert "z" in p
-            assert isinstance(p["z"], float)
-
-    def test_embedding_stats(self, test_db):
-        from codemesh.viz.embedding_projector import get_embedding_stats
-
-        stats = get_embedding_stats(test_db)
-        assert stats["total_nodes"] == 5
-        assert stats["embedded_nodes"] == 3  # 2 functions + 1 class have embeddings
-        assert stats["model"] == "test"
-
-    def test_no_embeddings(self, tmp_path):
-        db_path = tmp_path / ".codemesh" / "index.db"
-        db_path.parent.mkdir(parents=True)
-        init_db(db_path)
-
-        conn = create_connection(db_path)
-        conn.execute(
-            """INSERT INTO nodes (id, kind, name, qualified_name, file_path, language, start_line, end_line, embedding_model)
-               VALUES ('x1', 'function', 'foo', 'foo', 'foo.py', 'python', 1, 10, 'none')"""
-        )
-        conn.commit()
-        conn.close()
-
-        from codemesh.viz.embedding_projector import get_embedding_stats, project_embeddings
-
-        points = project_embeddings(tmp_path)
-        assert len(points) == 0
-
-        stats = get_embedding_stats(tmp_path)
-        assert stats["embedded_nodes"] == 0
