@@ -174,6 +174,7 @@ def uninstall(
         uninstall_cursor,
         uninstall_hermes,
         clean_project,
+        has_project_artifacts,
         select_agents_interactive,
     )
 
@@ -184,18 +185,20 @@ def uninstall(
         agents = detect_agents(root)
         configured = [a for a in agents if a.configured]
 
-        if not configured:
-            typer.echo("CodeMesh is not configured for any detected agents.")
-            raise typer.Exit(1)
-
         if yes:
+            # Non-interactive: uninstall from all configured agents (may be empty)
             targets = [a.name for a in configured]
         else:
+            # Interactive
+            if not configured and not has_project_artifacts(root):
+                typer.echo("CodeMesh is not configured for any detected agents.")
+                raise typer.Exit(1)
             targets = select_agents_interactive(agents, mode="uninstall")
 
     if "all" in targets:
         targets = ["claude", "cursor", "codex", "hermes"]
 
+    # ── Remove MCP server configs ──────────────────────────────────────────
     _UNINSTALL_FUNCS = {
         "claude": lambda: uninstall_claude(root, global_config=global_config),
         "cursor": lambda: uninstall_cursor(root),
@@ -212,12 +215,14 @@ def uninstall(
         else:
             typer.echo(f"Unknown agent: {agent}", err=True)
 
-    typer.echo("CodeMesh MCP server removed:")
-    for agent, r in results.items():
-        for key, val in r.items():
-            if val:
-                typer.echo(f"  {agent}/{key}: {val}")
+    if results:
+        typer.echo("CodeMesh MCP server removed:")
+        for agent, r in results.items():
+            for key, val in r.items():
+                if val:
+                    typer.echo(f"  {agent}/{key}: {val}")
 
+    # ── Remove project artifacts ───────────────────────────────────────────
     if clean:
         removed = clean_project(root, force=yes)
         if removed["removed"] or removed["modified"]:

@@ -632,3 +632,21 @@ def clean_project(root: Path, force: bool = False) -> dict:
         removed.append(str(cursor_rules))
 
     return {"removed": removed, "modified": modified}
+
+
+def has_project_artifacts(root: Path) -> bool:
+    """Check if any CodeMesh project artifacts exist at the given root."""
+    codemesh_dir = root / ".codemesh"
+    claude_md = root / "CLAUDE.md"
+    agents_md = root / "AGENTS.md"
+    cursor_rules = root / ".cursor" / "rules" / "codemesh.mdc"
+
+    if codemesh_dir.exists():
+        return True
+    if claude_md.exists() and "CodeMesh" in claude_md.read_text():
+        return True
+    if agents_md.exists() and "CodeMesh" in agents_md.read_text():
+        return True
+    if cursor_rules.exists():
+        return True
+    return False
