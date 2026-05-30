@@ -82,7 +82,13 @@ class QueryManager:
     def structural_search(
         self, query: str, filters: SearchFilters | None = None, max_depth: int = 3
     ) -> list[tuple[Node, float]]:
-        """Search by symbol name and expand via graph."""
+        """Search by symbol name and expand via graph.
+
+        BM25 hits use their FTS score directly (higher = more relevant).
+        Graph-walk neighbors are scaled to [0, 0.5) so they never outrank
+        a BM25 hit. This prevents the traversal noise from burying the
+        actual search result.
+        """
         candidates = search_nodes_fts(self.conn, query, limit=10)
         if not candidates:
             return []
@@ -90,11 +96,11 @@ class QueryManager:
         results: list[tuple[Node, float]] = []
         seen: set[str] = set()
 
-        for node, rank in candidates:
+        for node, bm25_score in candidates:
             if node.id in seen:
                 continue
             seen.add(node.id)
-            results.append((node, 1.0 / (1.0 + rank)))
+            results.append((node, bm25_score))
 
             subgraph = self.traverser.traverse(
                 self.conn,
@@ -107,7 +113,9 @@ class QueryManager:
                     seen.add(nid)
                     n = get_node(self.conn, nid)
                     if n:
-                        results.append((n, tr.score))
+                        # Scale graph scores to [0, 0.5) so they never
+                        # outrank a direct BM25 hit
+                        results.append((n, tr.score * 0.5))
 
         results.sort(key=lambda x: x[1], reverse=True)
         return results
