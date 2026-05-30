@@ -21,7 +21,6 @@ logger = logging.getLogger(__name__)
 _CLAUDE_MCP_CONFIG = {
     "mcpServers": {
         "codemesh": {
-            "type": "stdio",
             "command": "codemesh",
             "args": ["serve", "--transport", "stdio"],
         }
@@ -72,19 +71,32 @@ def detect_agents(root: Path | None = None) -> list[AgentInfo]:
     # ── Claude Code ─────────────────────────────────────────────────────────
     claude_dir = _find_claude_json_dir()
     claude_mcp = claude_dir / ".mcp.json" if claude_dir else None
+
+    # Check both config locations:
+    #   - ~/.claude/.mcp.json (Claude Code v1.x and other MCP clients)
+    #   - ~/.claude.json → mcpServers (Claude Code v2.x user-level MCP)
+    claude_json_path = Path.home() / ".claude.json"
+    _claude_json_configured = False
+    if claude_json_path.exists():
+        try:
+            _claude_json_data = json.loads(claude_json_path.read_text())
+            _claude_json_configured = "codemesh" in _claude_json_data.get("mcpServers", {})
+        except (json.JSONDecodeError, OSError):
+            pass
+
     claude_configured = (
         claude_mcp is not None
         and claude_mcp.exists()
         and "codemesh" in json.loads(claude_mcp.read_text()).get("mcpServers", {})
-    )
+    ) or _claude_json_configured
     agents.append(
         AgentInfo(
             name="claude",
             display="Claude Code",
-            detected=claude_mcp is not None and claude_mcp.exists(),
+            detected=(claude_mcp is not None and claude_mcp.exists()) or claude_json_path.exists(),
             configured=claude_configured,
             scope="global",
-            detail=str(claude_mcp) if claude_mcp else "",
+            detail=str(claude_mcp) if claude_mcp else str(claude_json_path),
         )
     )
 
@@ -285,30 +297,37 @@ def install_claude(root: Path, global_config: bool = True) -> dict:
     """Configure Claude Code to use CodeMesh MCP server.
 
     Claude Code discovers MCP servers from:
-      - Global: ~/.claude/.mcp.json
+      - Global: ~/.claude/.mcp.json (v1.x, Cursor-style)
+      - Global: ~/.claude.json → mcpServers (v2.x user-level)
       - Project: <root>/.mcp.json
 
-    The old ~/.claude/claude.json is NOT used for MCP server discovery.
-    We write to .mcp.json in the appropriate scope, and also write
-    permissions to ~/.claude/settings.json.
+    We write to ALL applicable locations so the server is discovered
+    regardless of which Claude Code version is installed.
     """
-    result: dict[str, str | None] = {"claude_mcp": None, "claude_settings": None}
+    result: dict[str, str | None] = {
+        "claude_mcp": None,
+        "claude_settings": None,
+        "claude_json": None,
+    }
 
     if global_config:
         claude_dir = _find_claude_json_dir()
         if claude_dir is None:
             claude_dir = Path.home() / ".claude"
             claude_dir.mkdir(parents=True, exist_ok=True)
-        # Global MCP config lives in ~/.claude/.mcp.json
+        # .mcp.json (v1.x compatibility)
         mcp_path = claude_dir / ".mcp.json"
         settings_path = claude_dir / "settings.json"
+        # ~/.claude.json → mcpServers (v2.x user-level)
+        claude_json_path = Path.home() / ".claude.json"
     else:
         # Project-local MCP config lives in <root>/.mcp.json
         mcp_path = root / ".mcp.json"
         settings_path = root / ".claude_settings.json"
+        claude_json_path = None
 
     # Check if already configured in the .mcp.json we're about to write
-    _mcp_cfg = {}
+    _mcp_cfg: dict = {}
     if mcp_path.exists():
         try:
             _mcp_cfg = json.loads(mcp_path.read_text())
@@ -320,6 +339,10 @@ def install_claude(root: Path, global_config: bool = True) -> dict:
         merged_settings = _merge_json_file(settings_path, _CLAUDE_PERMISSIONS)
         settings_path.write_text(json.dumps(merged_settings, indent=2))
         result["claude_settings"] = str(settings_path)
+        # Still ensure ~/.claude.json is updated even if .mcp.json was already configured
+        if claude_json_path is not None:
+            _install_claude_json(claude_json_path)
+            result["claude_json"] = str(claude_json_path)
         return result
 
     # Write MCP server config to .mcp.json
@@ -332,7 +355,28 @@ def install_claude(root: Path, global_config: bool = True) -> dict:
     settings_path.write_text(json.dumps(merged_settings, indent=2))
     result["claude_settings"] = str(settings_path)
 
+    # Write to ~/.claude.json → mcpServers (Claude Code v2.x)
+    if claude_json_path is not None:
+        _install_claude_json(claude_json_path)
+        result["claude_json"] = str(claude_json_path)
+
     return result
+
+
+def _install_claude_json(claude_json_path: Path) -> None:
+    """Write codemesh MCP server entry into ~/.claude.json → mcpServers."""
+    data: dict = {}
+    if claude_json_path.exists():
+        try:
+            data = json.loads(claude_json_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            data = {}
+    data.setdefault("mcpServers", {})
+    data["mcpServers"]["codemesh"] = {
+        "command": "codemesh",
+        "args": ["serve", "--transport", "stdio"],
+    }
+    claude_json_path.write_text(json.dumps(data, indent=2))
 
 
 def install_cursor(root: Path) -> dict:
@@ -445,18 +489,48 @@ def uninstall_claude(root: Path, global_config: bool = True) -> dict:
     Cleans up:
       - ~/.claude/.mcp.json (global) or <root>/.mcp.json (project-local)
       - ~/.claude/settings.json (global) or <root>/.claude_settings.json (project-local)
+      - ~/.claude.json → mcpServers (v2.x user-level)
     """
-    result: dict[str, str | None] = {"claude_mcp": None, "claude_settings": None}
+    result: dict[str, str | None] = {
+        "claude_mcp": None,
+        "claude_settings": None,
+        "claude_json": None,
+    }
 
     if global_config:
         claude_dir = _find_claude_json_dir()
         if claude_dir is None:
+            # Even without ~/.claude/ dir, still clean ~/.claude.json (v2.x)
+            claude_json_path = Path.home() / ".claude.json"
+            if claude_json_path.exists():
+                try:
+                    data = json.loads(claude_json_path.read_text())
+                except (json.JSONDecodeError, OSError):
+                    data = {}
+                if "codemesh" in data.get("mcpServers", {}):
+                    del data["mcpServers"]["codemesh"]
+                    if not data["mcpServers"]:
+                        del data["mcpServers"]
+                    claude_json_path.write_text(json.dumps(data, indent=2))
+                    return {
+                        "claude_mcp": None,
+                        "claude_settings": None,
+                        "claude_json": str(claude_json_path),
+                    }
+                else:
+                    return {
+                        "claude_mcp": None,
+                        "claude_settings": None,
+                        "claude_json": "not configured",
+                    }
             return result
         mcp_path = claude_dir / ".mcp.json"
         settings_path = claude_dir / "settings.json"
+        claude_json_path = Path.home() / ".claude.json"
     else:
         mcp_path = root / ".mcp.json"
         settings_path = root / ".claude_settings.json"
+        claude_json_path = None
 
     # Remove from .mcp.json
     if mcp_path.exists():
@@ -489,6 +563,21 @@ def uninstall_claude(root: Path, global_config: bool = True) -> dict:
             result["claude_settings"] = str(settings_path)
         else:
             result["claude_settings"] = "not configured"
+
+    # Remove from ~/.claude.json → mcpServers (Claude Code v2.x)
+    if claude_json_path is not None and claude_json_path.exists():
+        try:
+            data = json.loads(claude_json_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            data = {}
+        if "codemesh" in data.get("mcpServers", {}):
+            del data["mcpServers"]["codemesh"]
+            if not data["mcpServers"]:
+                del data["mcpServers"]
+            claude_json_path.write_text(json.dumps(data, indent=2))
+            result["claude_json"] = str(claude_json_path)
+        else:
+            result["claude_json"] = "not configured"
 
     return result
 
