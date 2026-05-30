@@ -95,6 +95,13 @@ TEST_FILE_FUNC = "extract_python_code_blocks"  # function in docs
 TEST_QUERY = "GroupChat"  # BM25 query that returns results
 TEST_NORESULT = "xyznonexistent12345"  # query with no results
 
+# ── Regression test: discover_projects ──────────────────────────────────
+# This symbol was previously buried at index 82/83 by graph-walk noise
+# because structural_search() inverted BM25 scores (1/(1+rank)).
+# Fixed in v0.1.14: BM25 scores now used directly, graph scores scaled < 0.5.
+TEST_REGRESSION_SYMBOL = "discover_projects"
+TEST_REGRESSION_FILE = "run_task_in_pkgs_if_exist.py"
+
 
 def run_tests():
     proc = start_server(PROJECT_ROOT)
@@ -147,6 +154,44 @@ def run_tests():
     )
     print(f"    {'PASS' if ok else 'FAIL'}: {text[:80]}")
     check("codemesh_search (no results)", text, ok, detail)
+
+    # ── 3b. codemesh_search (regression: discover_projects) ─────────────────
+    # This exact query was reported broken: Claude Code called codemesh_search
+    # and got back unrelated graph-walk nodes instead of the actual symbol.
+    print(f"\n[3b] codemesh_search: query='{TEST_REGRESSION_SYMBOL}' (regression)")
+    text, ok, detail = call_tool(
+        proc,
+        "codemesh_search",
+        {"query": TEST_REGRESSION_SYMBOL, "path": str(PROJECT_ROOT), "limit": 5},
+        expect_contains=[TEST_REGRESSION_SYMBOL, TEST_REGRESSION_FILE],
+    )
+    # Also verify the result appears in the top 2 (not buried at index 82)
+    top_result_ok = False
+    if ok:
+        # Parse: the first <snippet> should contain discover_projects
+        first_snippet_start = text.find("<snippet")
+        first_snippet_end = text.find("</snippet>", first_snippet_start)
+        first_snippet = (
+            text[first_snippet_start:first_snippet_end] if first_snippet_start >= 0 else ""
+        )
+        top_result_ok = TEST_REGRESSION_SYMBOL in first_snippet and "relevance=" in first_snippet
+        if not top_result_ok:
+            detail = f"discover_projects not in first snippet: {first_snippet[:100]}"
+            ok = False
+    print(f"    {'PASS' if ok else 'FAIL'}: top_result={top_result_ok}, {text[:80]}")
+    check("codemesh_search (regression: discover_projects)", text, ok, detail)
+
+    # ── 3c. codemesh_explore (regression: discover_projects) ────────────────
+    # Claude Code falls back to explore if search doesn't find it directly
+    print(f"\n[3c] codemesh_explore: symbol='{TEST_REGRESSION_SYMBOL}' (regression)")
+    text, ok, detail = call_tool(
+        proc,
+        "codemesh_explore",
+        {"symbol": TEST_REGRESSION_SYMBOL, "path": str(PROJECT_ROOT), "max_nodes": 10},
+        expect_contains=[TEST_REGRESSION_SYMBOL, TEST_REGRESSION_FILE],
+    )
+    print(f"    {'PASS' if ok else 'FAIL'}: {text[:80]}")
+    check("codemesh_explore (regression: discover_projects)", text, ok, detail)
 
     # ── 4. codemesh_context (by symbol) ────────────────────────────────────
     print(f"\n[4] codemesh_context: symbol='{TEST_CLASS}'")
@@ -285,7 +330,7 @@ def run_tests():
     check("codemesh_graph", text, ok, detail)
 
     # ── 15. Unknown tool ────────────────────────────────────────────────────
-    print("\n[15] Unknown tool: 'nonexistent_tool_xyz'")
+    print("\n[17] Unknown tool: 'nonexistent_tool_xyz'")
     text, ok, detail = call_tool(proc, "nonexistent_tool_xyz", {}, expect_contains=["Unknown tool"])
     print(f"    {'PASS' if ok else 'FAIL'}: {text[:80]}")
     check("unknown_tool", text, ok, detail)
