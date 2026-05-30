@@ -71,20 +71,20 @@ def detect_agents(root: Path | None = None) -> list[AgentInfo]:
 
     # ── Claude Code ─────────────────────────────────────────────────────────
     claude_dir = _find_claude_json_dir()
-    claude_json = claude_dir / "claude.json" if claude_dir else None
+    claude_mcp = claude_dir / ".mcp.json" if claude_dir else None
     claude_configured = (
-        claude_json is not None
-        and claude_json.exists()
-        and "codemesh" in json.loads(claude_json.read_text()).get("mcpServers", {})
+        claude_mcp is not None
+        and claude_mcp.exists()
+        and "codemesh" in json.loads(claude_mcp.read_text()).get("mcpServers", {})
     )
     agents.append(
         AgentInfo(
             name="claude",
             display="Claude Code",
-            detected=(claude_dir is not None and claude_dir.exists()),
+            detected=claude_mcp is not None and claude_mcp.exists(),
             configured=claude_configured,
             scope="global",
-            detail=str(claude_json) if claude_json else "",
+            detail=str(claude_mcp) if claude_mcp else "",
         )
     )
 
@@ -282,55 +282,55 @@ def _merge_json_file(path: Path, new_data: dict) -> dict:
 
 
 def install_claude(root: Path, global_config: bool = True) -> dict:
-    """Configure Claude Code to use CodeMesh MCP server."""
-    result = {"claude_json": None, "claude_settings": None, "mcp_json": None}
+    """Configure Claude Code to use CodeMesh MCP server.
+
+    Claude Code discovers MCP servers from:
+      - Global: ~/.claude/.mcp.json
+      - Project: <root>/.mcp.json
+
+    The old ~/.claude/claude.json is NOT used for MCP server discovery.
+    We write to .mcp.json in the appropriate scope, and also write
+    permissions to ~/.claude/settings.json.
+    """
+    result: dict[str, str | None] = {"claude_mcp": None, "claude_settings": None}
 
     if global_config:
         claude_dir = _find_claude_json_dir()
         if claude_dir is None:
             claude_dir = Path.home() / ".claude"
             claude_dir.mkdir(parents=True, exist_ok=True)
-        claude_json = claude_dir / "claude.json"
-        claude_settings = claude_dir / "settings.json"
+        # Global MCP config lives in ~/.claude/.mcp.json
+        mcp_path = claude_dir / ".mcp.json"
+        settings_path = claude_dir / "settings.json"
     else:
-        claude_json = root / ".claude.json"
-        claude_settings = root / ".claude_settings.json"
+        # Project-local MCP config lives in <root>/.mcp.json
+        mcp_path = root / ".mcp.json"
+        settings_path = root / ".claude_settings.json"
 
-    # Check if already configured
-    if claude_json.exists():
-        existing = json.loads(claude_json.read_text()) if claude_json.exists() else {}
-        if "codemesh" in existing.get("mcpServers", {}):
-            result["claude_json"] = str(claude_json) + " (already configured)"
-            return result
-
-    merged = _merge_json_file(claude_json, _CLAUDE_MCP_CONFIG)
-    claude_json.write_text(json.dumps(merged, indent=2))
-    result["claude_json"] = str(claude_json)
-
-    merged_settings = _merge_json_file(claude_settings, _CLAUDE_PERMISSIONS)
-    claude_settings.write_text(json.dumps(merged_settings, indent=2))
-    result["claude_settings"] = str(claude_settings)
-
-    # Also write .mcp.json at project root — this is what Claude Code
-    # actually reads for project-level MCP server discovery.
-    mcp_json = root / ".mcp.json"
-    mcp_config = {}
-    if mcp_json.exists():
+    # Check if already configured in the .mcp.json we're about to write
+    _mcp_cfg = {}
+    if mcp_path.exists():
         try:
-            mcp_config = json.loads(mcp_json.read_text())
+            _mcp_cfg = json.loads(mcp_path.read_text())
         except (json.JSONDecodeError, OSError):
-            mcp_config = {}
-    mcp_config.setdefault("mcpServers", {})
-    if "codemesh" not in mcp_config["mcpServers"]:
-        mcp_config["mcpServers"]["codemesh"] = {
-            "type": "stdio",
-            "command": "codemesh",
-            "args": ["serve", "--transport", "stdio"],
-        }
-        mcp_json.write_text(json.dumps(mcp_config, indent=2))
-        result["mcp_json"] = str(mcp_json)
-    else:
-        result["mcp_json"] = str(mcp_json) + " (already configured)"
+            _mcp_cfg = {}
+    if "codemesh" in _mcp_cfg.get("mcpServers", {}):
+        result["claude_mcp"] = str(mcp_path) + " (already configured)"
+        # Still ensure permissions are present
+        merged_settings = _merge_json_file(settings_path, _CLAUDE_PERMISSIONS)
+        settings_path.write_text(json.dumps(merged_settings, indent=2))
+        result["claude_settings"] = str(settings_path)
+        return result
+
+    # Write MCP server config to .mcp.json
+    merged_mcp = _merge_json_file(mcp_path, _CLAUDE_MCP_CONFIG)
+    mcp_path.write_text(json.dumps(merged_mcp, indent=2))
+    result["claude_mcp"] = str(mcp_path)
+
+    # Write permissions to settings.json
+    merged_settings = _merge_json_file(settings_path, _CLAUDE_PERMISSIONS)
+    settings_path.write_text(json.dumps(merged_settings, indent=2))
+    result["claude_settings"] = str(settings_path)
 
     return result
 
@@ -440,36 +440,43 @@ def install_hermes(_root: Path) -> dict:
 
 
 def uninstall_claude(root: Path, global_config: bool = True) -> dict:
-    """Remove CodeMesh MCP server configuration from Claude Code."""
-    result = {"claude_json": None, "claude_settings": None}
+    """Remove CodeMesh MCP server configuration from Claude Code.
+
+    Cleans up:
+      - ~/.claude/.mcp.json (global) or <root>/.mcp.json (project-local)
+      - ~/.claude/settings.json (global) or <root>/.claude_settings.json (project-local)
+    """
+    result: dict[str, str | None] = {"claude_mcp": None, "claude_settings": None}
 
     if global_config:
         claude_dir = _find_claude_json_dir()
         if claude_dir is None:
             return result
-        claude_json = claude_dir / "claude.json"
-        claude_settings = claude_dir / "settings.json"
+        mcp_path = claude_dir / ".mcp.json"
+        settings_path = claude_dir / "settings.json"
     else:
-        claude_json = root / ".claude.json"
-        claude_settings = root / ".claude_settings.json"
+        mcp_path = root / ".mcp.json"
+        settings_path = root / ".claude_settings.json"
 
-    if claude_json.exists():
+    # Remove from .mcp.json
+    if mcp_path.exists():
         try:
-            data = json.loads(claude_json.read_text())
+            data = json.loads(mcp_path.read_text())
         except (json.JSONDecodeError, OSError):
             data = {}
         if "codemesh" in data.get("mcpServers", {}):
             del data["mcpServers"]["codemesh"]
             if not data["mcpServers"]:
                 del data["mcpServers"]
-            claude_json.write_text(json.dumps(data, indent=2))
-            result["claude_json"] = str(claude_json)
+            mcp_path.write_text(json.dumps(data, indent=2))
+            result["claude_mcp"] = str(mcp_path)
         else:
-            result["claude_json"] = "not configured"
+            result["claude_mcp"] = "not configured"
 
-    if claude_settings.exists():
+    # Remove permissions from settings.json
+    if settings_path.exists():
         try:
-            settings = json.loads(claude_settings.read_text())
+            settings = json.loads(settings_path.read_text())
         except (json.JSONDecodeError, OSError):
             settings = {}
         perms = settings.get("permissions", {}).get("allow", [])
@@ -478,8 +485,8 @@ def uninstall_claude(root: Path, global_config: bool = True) -> dict:
             settings.setdefault("permissions", {})["allow"] = [
                 p for p in perms if not p.startswith("mcp__codemesh__")
             ]
-            claude_settings.write_text(json.dumps(settings, indent=2))
-            result["claude_settings"] = str(claude_settings)
+            settings_path.write_text(json.dumps(settings, indent=2))
+            result["claude_settings"] = str(settings_path)
         else:
             result["claude_settings"] = "not configured"
 
